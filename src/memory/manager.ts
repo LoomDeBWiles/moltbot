@@ -162,10 +162,13 @@ export class MemoryIndexManager {
   private watchTimer: NodeJS.Timeout | null = null;
   private sessionWatchTimer: NodeJS.Timeout | null = null;
   private sessionUnsubscribe: (() => void) | null = null;
+  private claudeWatcher: FSWatcher | null = null;
+  private claudeWatchTimer: NodeJS.Timeout | null = null;
   private intervalTimer: NodeJS.Timeout | null = null;
   private closed = false;
   private dirty = false;
   private sessionsDirty = false;
+  private claudeSessionsDirty = false;
   private sessionsDirtyFiles = new Set<string>();
   private sessionPendingFiles = new Set<string>();
   private sessionDeltas = new Map<
@@ -246,6 +249,7 @@ export class MemoryIndexManager {
     }
     this.ensureWatcher();
     this.ensureSessionListener();
+    this.ensureClaudeSessionsListener();
     this.ensureIntervalSync();
     this.dirty = this.sources.has("memory");
     this.batch = this.resolveBatchConfig();
@@ -575,6 +579,10 @@ export class MemoryIndexManager {
       clearTimeout(this.sessionWatchTimer);
       this.sessionWatchTimer = null;
     }
+    if (this.claudeWatchTimer) {
+      clearTimeout(this.claudeWatchTimer);
+      this.claudeWatchTimer = null;
+    }
     if (this.intervalTimer) {
       clearInterval(this.intervalTimer);
       this.intervalTimer = null;
@@ -582,6 +590,10 @@ export class MemoryIndexManager {
     if (this.watcher) {
       await this.watcher.close();
       this.watcher = null;
+    }
+    if (this.claudeWatcher) {
+      await this.claudeWatcher.close();
+      this.claudeWatcher = null;
     }
     if (this.sessionUnsubscribe) {
       this.sessionUnsubscribe();
@@ -808,6 +820,37 @@ export class MemoryIndexManager {
     });
   }
 
+  private ensureClaudeSessionsListener() {
+    if (!this.sources.has("claude-sessions") || !this.settings.sync.watch || this.claudeWatcher)
+      return;
+    const watchPath = this.settings.claudeSessions.path;
+    this.claudeWatcher = chokidar.watch(watchPath, {
+      ignoreInitial: true,
+      depth: 2,
+      awaitWriteFinish: {
+        stabilityThreshold: this.settings.sync.watchDebounceMs,
+        pollInterval: 100,
+      },
+    });
+    const markDirty = (filePath: string) => {
+      if (!filePath.endsWith(".jsonl")) return;
+      this.claudeSessionsDirty = true;
+      this.scheduleClaudeSessionsSync();
+    };
+    this.claudeWatcher.on("add", markDirty);
+    this.claudeWatcher.on("change", markDirty);
+  }
+
+  private scheduleClaudeSessionsSync() {
+    if (this.claudeWatchTimer) clearTimeout(this.claudeWatchTimer);
+    this.claudeWatchTimer = setTimeout(() => {
+      this.claudeWatchTimer = null;
+      void this.sync({ reason: "claude-watch" }).catch((err) => {
+        log.warn(`memory sync failed (claude-watch): ${String(err)}`);
+      });
+    }, this.settings.sync.watchDebounceMs);
+  }
+
   private scheduleSessionDirty(sessionFile: string) {
     this.sessionPendingFiles.add(sessionFile);
     if (this.sessionWatchTimer) return;
@@ -988,7 +1031,9 @@ export class MemoryIndexManager {
     if (params?.force) return true;
     const reason = params?.reason;
     if (reason === "session-start" || reason === "watch") return false;
-    return needsFullReindex;
+    if (reason === "claude-watch") return true;
+    if (needsFullReindex) return true;
+    return this.claudeSessionsDirty;
   }
 
   private async syncMemoryFiles(params: {
@@ -1279,6 +1324,7 @@ export class MemoryIndexManager {
 
       if (shouldSyncClaudeSessions) {
         await this.doSyncClaudeSessions({ needsFullReindex, progress: progress ?? undefined });
+        this.claudeSessionsDirty = false;
       }
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
@@ -1430,6 +1476,7 @@ export class MemoryIndexManager {
 
       if (shouldSyncClaudeSessions) {
         await this.doSyncClaudeSessions({ needsFullReindex: true, progress: params.progress });
+        this.claudeSessionsDirty = false;
       }
 
       nextMeta = {

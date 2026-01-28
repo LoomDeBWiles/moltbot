@@ -18,12 +18,16 @@ try {
 
 const testOrSkip = nodeSqliteAvailable ? it : it.skip;
 
+const mockChokidarOn = vi.fn();
+const mockChokidarClose = vi.fn(async () => undefined);
+const mockChokidarWatch = vi.fn(() => ({
+  on: mockChokidarOn,
+  close: mockChokidarClose,
+}));
+
 vi.mock("chokidar", () => ({
   default: {
-    watch: vi.fn(() => ({
-      on: vi.fn(),
-      close: vi.fn(async () => undefined),
-    })),
+    watch: mockChokidarWatch,
   },
 }));
 
@@ -77,6 +81,9 @@ describe("claude-sessions", () => {
     mockListFiles.mockClear();
     mockLoadSessionIds.mockClear();
     mockBuildEntry.mockClear();
+    mockChokidarWatch.mockClear();
+    mockChokidarOn.mockClear();
+    mockChokidarClose.mockClear();
     embedBatch.mockImplementation(async (texts: string[]) =>
       texts.map((_text, index) => [index + 1, 0, 0]),
     );
@@ -308,5 +315,78 @@ describe("claude-sessions", () => {
     // Memory source should still be indexed
     const memoryCounts = status.sourceCounts.find((sc) => sc.source === "memory");
     expect(memoryCounts?.files).toBe(1);
+  });
+
+  testOrSkip("claude watcher watches ~/.claude/projects when watch=true", async () => {
+    mockChokidarWatch.mockClear();
+    mockChokidarOn.mockClear();
+    mockListFiles.mockResolvedValue([]);
+    mockLoadSessionIds.mockResolvedValue(new Set());
+
+    const cfg = {
+      agents: {
+        defaults: {
+          workspace: workspaceDir,
+          memorySearch: {
+            sources: ["claude-sessions"],
+            provider: "openai",
+            model: "text-embedding-3-small",
+            store: { path: indexPath, vector: { enabled: false } },
+            sync: { watch: true, onSessionStart: false, onSearch: false },
+          },
+        },
+        list: [{ id: "main", default: true }],
+      },
+    };
+
+    const result = await getMemorySearchManager({ cfg, agentId: "main" });
+    expect(result.manager).not.toBeNull();
+    if (!result.manager) throw new Error("manager missing");
+    manager = result.manager;
+
+    // Verify chokidar.watch was called with the claude projects path
+    expect(mockChokidarWatch).toHaveBeenCalled();
+    const watchCalls = mockChokidarWatch.mock.calls;
+    const claudeWatchCall = watchCalls.find((call) => String(call[0]).includes(".claude/projects"));
+    expect(claudeWatchCall).toBeDefined();
+
+    // Verify event handlers were registered
+    const onCalls = mockChokidarOn.mock.calls;
+    const addHandler = onCalls.find((call) => call[0] === "add");
+    const changeHandler = onCalls.find((call) => call[0] === "change");
+    expect(addHandler).toBeDefined();
+    expect(changeHandler).toBeDefined();
+  });
+
+  testOrSkip("claude watcher not created when watch=false", async () => {
+    mockChokidarWatch.mockClear();
+    mockListFiles.mockResolvedValue([]);
+    mockLoadSessionIds.mockResolvedValue(new Set());
+
+    const cfg = {
+      agents: {
+        defaults: {
+          workspace: workspaceDir,
+          memorySearch: {
+            sources: ["claude-sessions"],
+            provider: "openai",
+            model: "text-embedding-3-small",
+            store: { path: indexPath, vector: { enabled: false } },
+            sync: { watch: false, onSessionStart: false, onSearch: false },
+          },
+        },
+        list: [{ id: "main", default: true }],
+      },
+    };
+
+    const result = await getMemorySearchManager({ cfg, agentId: "main" });
+    expect(result.manager).not.toBeNull();
+    if (!result.manager) throw new Error("manager missing");
+    manager = result.manager;
+
+    // Verify no chokidar.watch call includes claude/projects path
+    const watchCalls = mockChokidarWatch.mock.calls;
+    const claudeWatchCall = watchCalls.find((call) => String(call[0]).includes(".claude/projects"));
+    expect(claudeWatchCall).toBeUndefined();
   });
 });
