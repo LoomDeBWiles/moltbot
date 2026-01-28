@@ -26,6 +26,7 @@ export function ensureMemoryIndexSchema(params: {
       id TEXT PRIMARY KEY,
       path TEXT NOT NULL,
       source TEXT NOT NULL DEFAULT 'memory',
+      project TEXT,
       start_line INTEGER NOT NULL,
       end_line INTEGER NOT NULL,
       hash TEXT NOT NULL,
@@ -76,8 +77,12 @@ export function ensureMemoryIndexSchema(params: {
 
   ensureColumn(params.db, "files", "source", "TEXT NOT NULL DEFAULT 'memory'");
   ensureColumn(params.db, "chunks", "source", "TEXT NOT NULL DEFAULT 'memory'");
+  ensureColumn(params.db, "chunks", "project", "TEXT");
   params.db.exec(`CREATE INDEX IF NOT EXISTS idx_chunks_path ON chunks(path);`);
   params.db.exec(`CREATE INDEX IF NOT EXISTS idx_chunks_source ON chunks(source);`);
+  params.db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_chunks_source_project ON chunks(source, project);`,
+  );
 
   return { ftsAvailable, ...(ftsError ? { ftsError } : {}) };
 }
