@@ -66,4 +66,27 @@ Key directories:
 - Gemini batch embeddings: batch status polling fails with "API key expired" even with valid key — disable batch or debug the batch status auth path in `embeddings-gemini.ts`
 - Gemini non-batch also fails despite direct API calls working — suspect `npm link` vs published package mismatch or env var not reaching clawdbot process. Needs investigation.
 
+## Current State
+
+**Unified Memory (claude-sessions)** — code complete, not yet functional.
+
+What's done:
+- Beads epic `moltbot-sz1` with 12 tasks, all closed (`bd list`)
+- `src/memory/claude-session-files.ts` — parser for Claude JSONL format
+- `src/memory/sync-claude-sessions.ts` — sync pipeline with dedup
+- Manager integration, `--project` filter, source type wired in
+- Config set: `agents.defaults.memorySearch.provider=gemini`, `sources=["memory","sessions","claude-sessions"]`
+- `GEMINI_API_KEY` set in `~/.profile`, API key verified working via direct fetch
+- Node 22 installed, clawdbot linked via `npm link`
+- `~/.claude/projects/` has 5,945 session files to index
+
+What's blocked:
+- `clawdbot memory index` fails with "API key expired" despite key working via direct `fetch()`
+- Both batch and non-batch Gemini paths fail
+- Debug: `CLAWDBOT_DEBUG_MEMORY_EMBEDDINGS=1 clawdbot memory index` shows client init is correct
+- Suspect: `npm link` running stale dist, or env var not propagating through clawdbot's process tree
+- Start here: `src/memory/embeddings-gemini.ts:resolveRemoteApiKey()` and `resolveGeminiEmbeddingClient()`
+
+Spec docs: `docs/mods/unified-memory-beads.md`, rendered HTML in `output/index.html`
+
 ## Patterns
