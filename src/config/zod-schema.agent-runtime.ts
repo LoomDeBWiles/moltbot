@@ -303,7 +303,16 @@ export const AgentToolsSchema = z
 export const MemorySearchSchema = z
   .object({
     enabled: z.boolean().optional(),
-    sources: z.array(z.union([z.literal("memory"), z.literal("sessions")])).optional(),
+    sources: z
+      .array(z.union([z.literal("memory"), z.literal("sessions"), z.literal("claude-sessions")]))
+      .optional(),
+    claudeSessions: z
+      .object({
+        enabled: z.boolean().optional(),
+        path: z.string().optional(),
+      })
+      .strict()
+      .optional(),
     experimental: z
       .object({
         sessionMemory: z.boolean().optional(),
