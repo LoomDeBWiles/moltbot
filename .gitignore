@@ -71,3 +71,9 @@ USER.md
 
 # local tooling
 .serena/
+
+# bv (beads viewer) local config and caches
+.bv/
+
+# spec render output
+output/
