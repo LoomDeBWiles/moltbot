@@ -563,6 +563,7 @@ export function registerMemoryCli(program: Command) {
     .option("--agent <id>", "Agent id (default: default agent)")
     .option("--max-results <n>", "Max results", (value: string) => Number(value))
     .option("--min-score <n>", "Minimum score", (value: string) => Number(value))
+    .option("--project <slug>", "Filter results to a specific project")
     .option("--json", "Print JSON")
     .action(
       async (
@@ -570,6 +571,7 @@ export function registerMemoryCli(program: Command) {
         opts: MemoryCommandOptions & {
           maxResults?: number;
           minScore?: number;
+          project?: string;
         },
       ) => {
         const cfg = loadConfig();
@@ -586,6 +588,7 @@ export function registerMemoryCli(program: Command) {
               results = await manager.search(query, {
                 maxResults: opts.maxResults,
                 minScore: opts.minScore,
+                project: opts.project,
               });
             } catch (err) {
               const message = formatErrorMessage(err);
