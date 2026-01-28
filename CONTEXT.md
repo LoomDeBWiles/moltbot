@@ -63,12 +63,12 @@ Key directories:
 - Node 22+ required to run clawdbot
 - `npm link` from repo root to use dev version globally
 - `spec verify`: only supports Python codebases, not TypeScript — run acceptance criteria manually
-- Gemini batch embeddings: batch status polling fails with "API key expired" even with valid key — disable batch or debug the batch status auth path in `embeddings-gemini.ts`
-- Gemini non-batch also fails despite direct API calls working — suspect `npm link` vs published package mismatch or env var not reaching clawdbot process. Needs investigation.
+- Gemini async batch API (`asyncBatchEmbedContent`): returns "API key expired" despite valid key — this is a Gemini API limitation with API keys. Async batch is now disabled by default. Sync `batchEmbedContents` works fine.
+- `batch-gemini.ts`: Gemini batch status response nests `state` under `metadata` (not top-level) and prefixes values with `BATCH_STATE_` (e.g., `BATCH_STATE_PENDING` not `PENDING`). Fixed in `extractBatchState()`/`extractOutputFileId()`.
 
 ## Current State
 
-**Unified Memory (claude-sessions)** — code complete, not yet functional.
+**Unified Memory (claude-sessions)** — code complete, NOT WORKING. Database is empty.
 
 What's done:
 - Beads epic `moltbot-sz1` with 12 tasks, all closed (`bd list`)
@@ -78,14 +78,29 @@ What's done:
 - Config set: `agents.defaults.memorySearch.provider=gemini`, `sources=["memory","sessions","claude-sessions"]`
 - `GEMINI_API_KEY` set in `~/.profile`, API key verified working via direct fetch
 - Node 22 installed, clawdbot linked via `npm link`
-- `~/.claude/projects/` has 5,945 session files to index
+- 5,945 Claude session files in `~/.claude/projects/`
 
-What's blocked:
-- `clawdbot memory index` fails with "API key expired" despite key working via direct `fetch()`
-- Both batch and non-batch Gemini paths fail
-- Debug: `CLAWDBOT_DEBUG_MEMORY_EMBEDDINGS=1 clawdbot memory index` shows client init is correct
-- Suspect: `npm link` running stale dist, or env var not propagating through clawdbot's process tree
-- Start here: `src/memory/embeddings-gemini.ts:resolveRemoteApiKey()` and `resolveGeminiEmbeddingClient()`
+What's broken:
+- `clawdbot memory status` reports 17,266 chunks but **the database has 0 rows**
+- Every `clawdbot memory search` returns "No matches"
+- `clawdbot memory index` reports success but writes nothing to DB
+- Verified with: `node --experimental-sqlite -e` querying `~/.clawdbot/memory/main.sqlite` directly — chunks table is empty
+
+How to verify DB state (don't trust `clawdbot memory status`):
+```bash
+node --experimental-sqlite -e '
+const { DatabaseSync } = require("node:sqlite");
+const db = new DatabaseSync(require("os").homedir() + "/.clawdbot/memory/main.sqlite", { open: true, readOnly: true });
+console.log("chunks:", db.prepare("SELECT count(*) as n FROM chunks").get().n);
+db.close();
+'
+```
+
+Where to debug:
+- `src/memory/manager.ts` — `sync()` and `indexFile()` methods
+- `src/memory/sync-claude-sessions.ts` — does it call indexFile?
+- `src/memory/embeddings-gemini.ts` — API key resolves correctly, embeddings API works via direct fetch
+- Check if `npm link` is running stale dist/ — rebuild with `npx tsc` and retry
 
 Spec docs: `docs/mods/unified-memory-beads.md`, rendered HTML in `output/index.html`
 
