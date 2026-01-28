@@ -46,7 +46,7 @@ import { ensureMemoryIndexSchema } from "./memory-schema.js";
 import { requireNodeSqlite } from "./sqlite.js";
 import { loadSqliteVecExtension } from "./sqlite-vec.js";
 
-type MemorySource = "memory" | "sessions";
+type MemorySource = "memory" | "sessions" | "claude-sessions";
 
 export type MemorySearchResult = {
   path: string;
@@ -2079,7 +2079,7 @@ export class MemoryIndexManager {
 
   private async indexFile(
     entry: MemoryFileEntry | SessionFileEntry,
-    options: { source: MemorySource; content?: string },
+    options: { source: MemorySource; content?: string; project?: string },
   ) {
     const content = options.content ?? (await fs.readFile(entry.absPath, "utf-8"));
     const chunks = chunkMarkdown(content, this.settings.chunking).filter(
@@ -2118,19 +2118,21 @@ export class MemoryIndexManager {
       );
       this.db
         .prepare(
-          `INSERT INTO chunks (id, path, source, start_line, end_line, hash, model, text, embedding, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `INSERT INTO chunks (id, path, source, project, start_line, end_line, hash, model, text, embedding, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(id) DO UPDATE SET
              hash=excluded.hash,
              model=excluded.model,
              text=excluded.text,
              embedding=excluded.embedding,
+             project=excluded.project,
              updated_at=excluded.updated_at`,
         )
         .run(
           id,
           entry.path,
           options.source,
+          options.project ?? null,
           chunk.startLine,
           chunk.endLine,
           chunk.hash,

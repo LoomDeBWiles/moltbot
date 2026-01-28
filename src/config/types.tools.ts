@@ -221,11 +221,20 @@ export type AgentToolsConfig = {
   };
 };
 
+export type ClaudeSessionsConfig = {
+  /** Enable indexing Claude Code sessions (default: false). */
+  enabled?: boolean;
+  /** Base path to scan for Claude Code projects (default: "~/.claude/projects"). */
+  path?: string;
+};
+
 export type MemorySearchConfig = {
   /** Enable vector memory search (default: true). */
   enabled?: boolean;
   /** Sources to index and search (default: ["memory"]). */
-  sources?: Array<"memory" | "sessions">;
+  sources?: Array<"memory" | "sessions" | "claude-sessions">;
+  /** Claude Code session indexing configuration. */
+  claudeSessions?: ClaudeSessionsConfig;
   /** Experimental memory search settings. */
   experimental?: {
     /** Enable session transcript indexing (experimental, default: false). */

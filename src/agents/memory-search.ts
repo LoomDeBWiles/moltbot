@@ -6,9 +6,15 @@ import { resolveStateDir } from "../config/paths.js";
 import { clampInt, clampNumber, resolveUserPath } from "../utils.js";
 import { resolveAgentConfig } from "./agent-scope.js";
 
+export type ResolvedClaudeSessionsConfig = {
+  enabled: boolean;
+  path: string;
+};
+
 export type ResolvedMemorySearchConfig = {
   enabled: boolean;
-  sources: Array<"memory" | "sessions">;
+  sources: Array<"memory" | "sessions" | "claude-sessions">;
+  claudeSessions: ResolvedClaudeSessionsConfig;
   provider: "openai" | "local" | "gemini" | "auto";
   remote?: {
     baseUrl?: string;
@@ -84,17 +90,19 @@ const DEFAULT_HYBRID_VECTOR_WEIGHT = 0.7;
 const DEFAULT_HYBRID_TEXT_WEIGHT = 0.3;
 const DEFAULT_HYBRID_CANDIDATE_MULTIPLIER = 4;
 const DEFAULT_CACHE_ENABLED = true;
-const DEFAULT_SOURCES: Array<"memory" | "sessions"> = ["memory"];
+const DEFAULT_SOURCES: Array<"memory" | "sessions" | "claude-sessions"> = ["memory"];
+const DEFAULT_CLAUDE_SESSIONS_PATH = "~/.claude/projects";
 
 function normalizeSources(
-  sources: Array<"memory" | "sessions"> | undefined,
+  sources: Array<"memory" | "sessions" | "claude-sessions"> | undefined,
   sessionMemoryEnabled: boolean,
-): Array<"memory" | "sessions"> {
-  const normalized = new Set<"memory" | "sessions">();
+): Array<"memory" | "sessions" | "claude-sessions"> {
+  const normalized = new Set<"memory" | "sessions" | "claude-sessions">();
   const input = sources?.length ? sources : DEFAULT_SOURCES;
   for (const source of input) {
     if (source === "memory") normalized.add("memory");
     if (source === "sessions" && sessionMemoryEnabled) normalized.add("sessions");
+    if (source === "claude-sessions") normalized.add("claude-sessions");
   }
   if (normalized.size === 0) normalized.add("memory");
   return Array.from(normalized);
@@ -160,6 +168,17 @@ function mergeConfig(
   const local = {
     modelPath: overrides?.local?.modelPath ?? defaults?.local?.modelPath,
     modelCacheDir: overrides?.local?.modelCacheDir ?? defaults?.local?.modelCacheDir,
+  };
+  const claudeSessionsEnabled =
+    overrides?.claudeSessions?.enabled ?? defaults?.claudeSessions?.enabled ?? false;
+  const claudeSessionsPath = resolveUserPath(
+    overrides?.claudeSessions?.path ??
+      defaults?.claudeSessions?.path ??
+      DEFAULT_CLAUDE_SESSIONS_PATH,
+  );
+  const claudeSessions = {
+    enabled: claudeSessionsEnabled,
+    path: claudeSessionsPath,
   };
   const sources = normalizeSources(overrides?.sources ?? defaults?.sources, sessionMemory);
   const vector = {
@@ -236,6 +255,7 @@ function mergeConfig(
   return {
     enabled,
     sources,
+    claudeSessions,
     provider,
     remote,
     experimental: {
