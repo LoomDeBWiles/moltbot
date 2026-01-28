@@ -233,4 +233,39 @@ describe("memory search config", () => {
     const resolved = resolveMemorySearchConfig(cfg, "main");
     expect(resolved?.sources).toContain("sessions");
   });
+
+  it("defaults claudeSessions to disabled with default path", () => {
+    const cfg = {
+      agents: {
+        defaults: {
+          memorySearch: {
+            provider: "openai",
+          },
+        },
+      },
+    };
+    const resolved = resolveMemorySearchConfig(cfg, "main");
+    expect(resolved?.claudeSessions.enabled).toBe(false);
+    expect(resolved?.claudeSessions.path).toMatch(/\.claude\/projects$/);
+  });
+
+  it("resolves claudeSessions config with path expansion", () => {
+    const cfg = {
+      agents: {
+        defaults: {
+          memorySearch: {
+            provider: "openai",
+            claudeSessions: {
+              enabled: true,
+              path: "~/.claude/projects",
+            },
+          },
+        },
+      },
+    };
+    const resolved = resolveMemorySearchConfig(cfg, "main");
+    expect(resolved?.claudeSessions.enabled).toBe(true);
+    expect(resolved?.claudeSessions.path).not.toContain("~");
+    expect(resolved?.claudeSessions.path).toMatch(/\.claude\/projects$/);
+  });
 });
