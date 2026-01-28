@@ -6,6 +6,15 @@ import { cosineSimilarity, parseEmbedding } from "./internal.js";
 const vectorToBlob = (embedding: number[]): Buffer =>
   Buffer.from(new Float32Array(embedding).buffer);
 
+function buildProjectFilter(
+  project: string | undefined,
+  alias?: string,
+): { sql: string; params: (string | null)[] } {
+  if (project === undefined) return { sql: "", params: [] };
+  const column = alias ? `${alias}.project` : "project";
+  return { sql: ` AND (${column} = ? OR ? IS NULL)`, params: [project, project] };
+}
+
 export type SearchSource = string;
 
 export type SearchRowResult = {
@@ -28,8 +37,10 @@ export async function searchVector(params: {
   ensureVectorReady: (dimensions: number) => Promise<boolean>;
   sourceFilterVec: { sql: string; params: SearchSource[] };
   sourceFilterChunks: { sql: string; params: SearchSource[] };
+  project?: string;
 }): Promise<SearchRowResult[]> {
   if (params.queryVec.length === 0 || params.limit <= 0) return [];
+  const projectFilter = buildProjectFilter(params.project, "c");
   if (await params.ensureVectorReady(params.queryVec.length)) {
     const rows = params.db
       .prepare(
@@ -38,7 +49,7 @@ export async function searchVector(params: {
           `       vec_distance_cosine(v.embedding, ?) AS dist\n` +
           `  FROM ${params.vectorTable} v\n` +
           `  JOIN chunks c ON c.id = v.id\n` +
-          ` WHERE c.model = ?${params.sourceFilterVec.sql}\n` +
+          ` WHERE c.model = ?${params.sourceFilterVec.sql}${projectFilter.sql}\n` +
           ` ORDER BY dist ASC\n` +
           ` LIMIT ?`,
       )
@@ -46,6 +57,7 @@ export async function searchVector(params: {
         vectorToBlob(params.queryVec),
         params.providerModel,
         ...params.sourceFilterVec.params,
+        ...projectFilter.params,
         params.limit,
       ) as Array<{
       id: string;
@@ -67,10 +79,12 @@ export async function searchVector(params: {
     }));
   }
 
+  const chunksProjectFilter = buildProjectFilter(params.project);
   const candidates = listChunks({
     db: params.db,
     providerModel: params.providerModel,
     sourceFilter: params.sourceFilterChunks,
+    projectFilter: chunksProjectFilter,
   });
   const scored = candidates
     .map((chunk) => ({
@@ -96,6 +110,7 @@ export function listChunks(params: {
   db: DatabaseSync;
   providerModel: string;
   sourceFilter: { sql: string; params: SearchSource[] };
+  projectFilter?: { sql: string; params: (string | null)[] };
 }): Array<{
   id: string;
   path: string;
@@ -105,13 +120,14 @@ export function listChunks(params: {
   embedding: number[];
   source: SearchSource;
 }> {
+  const projFilter = params.projectFilter ?? { sql: "", params: [] };
   const rows = params.db
     .prepare(
       `SELECT id, path, start_line, end_line, text, embedding, source\n` +
         `  FROM chunks\n` +
-        ` WHERE model = ?${params.sourceFilter.sql}`,
+        ` WHERE model = ?${params.sourceFilter.sql}${projFilter.sql}`,
     )
-    .all(params.providerModel, ...params.sourceFilter.params) as Array<{
+    .all(params.providerModel, ...params.sourceFilter.params, ...projFilter.params) as Array<{
     id: string;
     path: string;
     start_line: number;
@@ -142,21 +158,41 @@ export async function searchKeyword(params: {
   sourceFilter: { sql: string; params: SearchSource[] };
   buildFtsQuery: (raw: string) => string | null;
   bm25RankToScore: (rank: number) => number;
+  project?: string;
 }): Promise<Array<SearchRowResult & { textScore: number }>> {
   if (params.limit <= 0) return [];
   const ftsQuery = params.buildFtsQuery(params.query);
   if (!ftsQuery) return [];
 
-  const rows = params.db
-    .prepare(
-      `SELECT id, path, source, start_line, end_line, text,\n` +
-        `       bm25(${params.ftsTable}) AS rank\n` +
-        `  FROM ${params.ftsTable}\n` +
-        ` WHERE ${params.ftsTable} MATCH ? AND model = ?${params.sourceFilter.sql}\n` +
-        ` ORDER BY rank ASC\n` +
-        ` LIMIT ?`,
-    )
-    .all(ftsQuery, params.providerModel, ...params.sourceFilter.params, params.limit) as Array<{
+  const projectFilter = buildProjectFilter(params.project, "c");
+  const needsJoin = params.project !== undefined;
+
+  const sql = needsJoin
+    ? `SELECT f.id, f.path, f.source, f.start_line, f.end_line, f.text,\n` +
+      `       bm25(${params.ftsTable}) AS rank\n` +
+      `  FROM ${params.ftsTable} f\n` +
+      `  JOIN chunks c ON c.id = f.id\n` +
+      ` WHERE ${params.ftsTable} MATCH ? AND f.model = ?${params.sourceFilter.sql}${projectFilter.sql}\n` +
+      ` ORDER BY rank ASC\n` +
+      ` LIMIT ?`
+    : `SELECT id, path, source, start_line, end_line, text,\n` +
+      `       bm25(${params.ftsTable}) AS rank\n` +
+      `  FROM ${params.ftsTable}\n` +
+      ` WHERE ${params.ftsTable} MATCH ? AND model = ?${params.sourceFilter.sql}\n` +
+      ` ORDER BY rank ASC\n` +
+      ` LIMIT ?`;
+
+  const queryParams = needsJoin
+    ? [
+        ftsQuery,
+        params.providerModel,
+        ...params.sourceFilter.params,
+        ...projectFilter.params,
+        params.limit,
+      ]
+    : [ftsQuery, params.providerModel, ...params.sourceFilter.params, params.limit];
+
+  const rows = params.db.prepare(sql).all(...queryParams) as Array<{
     id: string;
     path: string;
     source: SearchSource;

@@ -45,6 +45,9 @@ import { searchKeyword, searchVector } from "./manager-search.js";
 import { ensureMemoryIndexSchema } from "./memory-schema.js";
 import { requireNodeSqlite } from "./sqlite.js";
 import { loadSqliteVecExtension } from "./sqlite-vec.js";
+import type { ClaudeSessionEntry } from "./claude-session-files.js";
+import { loadMoltbotClaudeSessionIds } from "./claude-session-files.js";
+import { syncClaudeSessionFiles } from "./sync-claude-sessions.js";
 
 type MemorySource = "memory" | "sessions" | "claude-sessions";
 
@@ -264,6 +267,7 @@ export class MemoryIndexManager {
       maxResults?: number;
       minScore?: number;
       sessionKey?: string;
+      project?: string;
     },
   ): Promise<MemorySearchResult[]> {
     void this.warmSession(opts?.sessionKey);
@@ -276,6 +280,7 @@ export class MemoryIndexManager {
     if (!cleaned) return [];
     const minScore = opts?.minScore ?? this.settings.query.minScore;
     const maxResults = opts?.maxResults ?? this.settings.query.maxResults;
+    const project = opts?.project;
     const hybrid = this.settings.query.hybrid;
     const candidates = Math.min(
       200,
@@ -283,13 +288,13 @@ export class MemoryIndexManager {
     );
 
     const keywordResults = hybrid.enabled
-      ? await this.searchKeyword(cleaned, candidates).catch(() => [])
+      ? await this.searchKeyword(cleaned, candidates, project).catch(() => [])
       : [];
 
     const queryVec = await this.embedQueryWithTimeout(cleaned);
     const hasVector = queryVec.some((v) => v !== 0);
     const vectorResults = hasVector
-      ? await this.searchVector(queryVec, candidates).catch(() => [])
+      ? await this.searchVector(queryVec, candidates, project).catch(() => [])
       : [];
 
     if (!hybrid.enabled) {
@@ -309,6 +314,7 @@ export class MemoryIndexManager {
   private async searchVector(
     queryVec: number[],
     limit: number,
+    project?: string,
   ): Promise<Array<MemorySearchResult & { id: string }>> {
     const results = await searchVector({
       db: this.db,
@@ -320,6 +326,7 @@ export class MemoryIndexManager {
       ensureVectorReady: async (dimensions) => await this.ensureVectorReady(dimensions),
       sourceFilterVec: this.buildSourceFilter("c"),
       sourceFilterChunks: this.buildSourceFilter(),
+      project,
     });
     return results.map((entry) => entry as MemorySearchResult & { id: string });
   }
@@ -331,6 +338,7 @@ export class MemoryIndexManager {
   private async searchKeyword(
     query: string,
     limit: number,
+    project?: string,
   ): Promise<Array<MemorySearchResult & { id: string; textScore: number }>> {
     if (!this.fts.enabled || !this.fts.available) return [];
     const sourceFilter = this.buildSourceFilter();
@@ -344,6 +352,7 @@ export class MemoryIndexManager {
       sourceFilter,
       buildFtsQuery: (raw) => this.buildFtsQuery(raw),
       bm25RankToScore,
+      project,
     });
     return results.map((entry) => entry as MemorySearchResult & { id: string; textScore: number });
   }
@@ -971,6 +980,17 @@ export class MemoryIndexManager {
     return this.sessionsDirty && this.sessionsDirtyFiles.size > 0;
   }
 
+  private shouldSyncClaudeSessions(
+    params?: { reason?: string; force?: boolean },
+    needsFullReindex = false,
+  ) {
+    if (!this.sources.has("claude-sessions")) return false;
+    if (params?.force) return true;
+    const reason = params?.reason;
+    if (reason === "session-start" || reason === "watch") return false;
+    return needsFullReindex;
+  }
+
   private async syncMemoryFiles(params: {
     needsFullReindex: boolean;
     progress?: MemorySyncProgressState;
@@ -1143,6 +1163,43 @@ export class MemoryIndexManager {
     }
   }
 
+  private async doSyncClaudeSessions(params: {
+    needsFullReindex: boolean;
+    progress?: MemorySyncProgressState;
+  }) {
+    const excludeSessionIds = await loadMoltbotClaudeSessionIds(this.agentId);
+
+    await syncClaudeSessionFiles({
+      db: this.db,
+      excludeSessionIds,
+      needsFullReindex: params.needsFullReindex,
+      progress: params.progress,
+      batchEnabled: this.batch.enabled,
+      concurrency: this.getIndexConcurrency(),
+      runWithConcurrency: (tasks, concurrency) => this.runWithConcurrency(tasks, concurrency),
+      indexFile: async (entry: ClaudeSessionEntry) => {
+        // Adapt ClaudeSessionEntry to the format expected by indexFile
+        const adaptedEntry = {
+          path: entry.path,
+          absPath: entry.path, // path is already absolute
+          mtimeMs: Date.now(), // Use current time (hash check already done)
+          size: entry.content.length,
+          hash: entry.hash,
+        };
+        await this.indexFile(adaptedEntry, {
+          source: "claude-sessions",
+          content: entry.content,
+          project: entry.project,
+        });
+      },
+      vectorTable: VECTOR_TABLE,
+      ftsTable: FTS_TABLE,
+      ftsEnabled: this.fts.enabled,
+      ftsAvailable: this.fts.available,
+      model: this.provider.model,
+    });
+  }
+
   private createSyncProgress(
     onProgress: (update: MemorySyncProgressUpdate) => void,
   ): MemorySyncProgressState {
@@ -1203,6 +1260,7 @@ export class MemoryIndexManager {
       const shouldSyncMemory =
         this.sources.has("memory") && (params?.force || needsFullReindex || this.dirty);
       const shouldSyncSessions = this.shouldSyncSessions(params, needsFullReindex);
+      const shouldSyncClaudeSessions = this.shouldSyncClaudeSessions(params, needsFullReindex);
 
       if (shouldSyncMemory) {
         await this.syncMemoryFiles({ needsFullReindex, progress: progress ?? undefined });
@@ -1217,6 +1275,10 @@ export class MemoryIndexManager {
         this.sessionsDirty = true;
       } else {
         this.sessionsDirty = false;
+      }
+
+      if (shouldSyncClaudeSessions) {
+        await this.doSyncClaudeSessions({ needsFullReindex, progress: progress ?? undefined });
       }
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
@@ -1346,6 +1408,10 @@ export class MemoryIndexManager {
         { reason: params.reason, force: params.force },
         true,
       );
+      const shouldSyncClaudeSessions = this.shouldSyncClaudeSessions(
+        { reason: params.reason, force: params.force },
+        true,
+      );
 
       if (shouldSyncMemory) {
         await this.syncMemoryFiles({ needsFullReindex: true, progress: params.progress });
@@ -1360,6 +1426,10 @@ export class MemoryIndexManager {
         this.sessionsDirty = true;
       } else {
         this.sessionsDirty = false;
+      }
+
+      if (shouldSyncClaudeSessions) {
+        await this.doSyncClaudeSessions({ needsFullReindex: true, progress: params.progress });
       }
 
       nextMeta = {
