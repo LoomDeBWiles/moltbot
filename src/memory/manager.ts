@@ -774,6 +774,21 @@ export class MemoryIndexManager {
     await Promise.all(suffixes.map((suffix) => fs.rm(`${basePath}${suffix}`, { force: true })));
   }
 
+  /** Remove orphaned temp DB files left by crashed reindex operations. */
+  private async cleanOrphanedTempFiles(): Promise<void> {
+    const dbPath = resolveUserPath(this.settings.store.path);
+    const dbDir = path.dirname(dbPath);
+    const dbBase = path.basename(dbPath);
+    try {
+      const entries = await fs.readdir(dbDir);
+      for (const entry of entries) {
+        if (entry.startsWith(`${dbBase}.tmp-`)) {
+          await fs.rm(path.join(dbDir, entry), { force: true });
+        }
+      }
+    } catch {}
+  }
+
   private ensureSchema() {
     const result = ensureMemoryIndexSchema({
       db: this.db,
@@ -1274,6 +1289,7 @@ export class MemoryIndexManager {
     progress?: (update: MemorySyncProgressUpdate) => void;
   }) {
     const progress = params?.progress ? this.createSyncProgress(params.progress) : undefined;
+    await this.cleanOrphanedTempFiles();
     if (progress) {
       progress.report({
         completed: progress.completed,
@@ -1290,8 +1306,7 @@ export class MemoryIndexManager {
       meta.provider !== this.provider.id ||
       meta.providerKey !== this.providerKey ||
       meta.chunkTokens !== this.settings.chunking.tokens ||
-      meta.chunkOverlap !== this.settings.chunking.overlap ||
-      (vectorReady && !meta?.vectorDims);
+      meta.chunkOverlap !== this.settings.chunking.overlap;
     try {
       if (needsFullReindex) {
         await this.runSafeReindex({
@@ -1302,18 +1317,31 @@ export class MemoryIndexManager {
         return;
       }
 
+      // Detect empty DB that claims to be indexed — treat as needing full sync
+      const dbIsEmpty =
+        !needsFullReindex &&
+        meta &&
+        (this.db.prepare("SELECT COUNT(*) as c FROM chunks").get() as { c: number }).c === 0;
+      const needsFullSync = needsFullReindex || dbIsEmpty;
+
       const shouldSyncMemory =
-        this.sources.has("memory") && (params?.force || needsFullReindex || this.dirty);
-      const shouldSyncSessions = this.shouldSyncSessions(params, needsFullReindex);
-      const shouldSyncClaudeSessions = this.shouldSyncClaudeSessions(params, needsFullReindex);
+        this.sources.has("memory") && (params?.force || needsFullSync || this.dirty);
+      const shouldSyncSessions = this.shouldSyncSessions(params, needsFullSync);
+      const shouldSyncClaudeSessions = this.shouldSyncClaudeSessions(params, needsFullSync);
 
       if (shouldSyncMemory) {
-        await this.syncMemoryFiles({ needsFullReindex, progress: progress ?? undefined });
+        await this.syncMemoryFiles({
+          needsFullReindex: needsFullSync,
+          progress: progress ?? undefined,
+        });
         this.dirty = false;
       }
 
       if (shouldSyncSessions) {
-        await this.syncSessionFiles({ needsFullReindex, progress: progress ?? undefined });
+        await this.syncSessionFiles({
+          needsFullReindex: needsFullSync,
+          progress: progress ?? undefined,
+        });
         this.sessionsDirty = false;
         this.sessionsDirtyFiles.clear();
       } else if (this.sessionsDirtyFiles.size > 0) {
@@ -1323,9 +1351,31 @@ export class MemoryIndexManager {
       }
 
       if (shouldSyncClaudeSessions) {
-        await this.doSyncClaudeSessions({ needsFullReindex, progress: progress ?? undefined });
-        this.claudeSessionsDirty = false;
+        try {
+          await this.doSyncClaudeSessions({
+            needsFullReindex: needsFullSync,
+            progress: progress ?? undefined,
+          });
+          this.claudeSessionsDirty = false;
+        } catch (err) {
+          log.warn(
+            `claude-sessions sync failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
       }
+
+      // Persist meta so vectorDims is recorded after incremental sync
+      const currentMeta: MemoryIndexMeta = {
+        model: this.provider.model,
+        provider: this.provider.id,
+        providerKey: this.providerKey,
+        chunkTokens: this.settings.chunking.tokens,
+        chunkOverlap: this.settings.chunking.overlap,
+      };
+      if (this.vector.available && this.vector.dims) {
+        currentMeta.vectorDims = this.vector.dims;
+      }
+      this.writeMeta(currentMeta);
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       const activated =
@@ -1475,8 +1525,14 @@ export class MemoryIndexManager {
       }
 
       if (shouldSyncClaudeSessions) {
-        await this.doSyncClaudeSessions({ needsFullReindex: true, progress: params.progress });
-        this.claudeSessionsDirty = false;
+        try {
+          await this.doSyncClaudeSessions({ needsFullReindex: true, progress: params.progress });
+          this.claudeSessionsDirty = false;
+        } catch (err) {
+          log.warn(
+            `claude-sessions sync failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
       }
 
       nextMeta = {

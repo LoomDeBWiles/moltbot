@@ -77,30 +77,41 @@ What's done:
 - Manager integration, `--project` filter, source type wired in
 - Config set: `agents.defaults.memorySearch.provider=gemini`, `sources=["memory","sessions","claude-sessions"]`
 - `GEMINI_API_KEY` set in `~/.profile`, API key verified working via direct fetch
+- Gemini embedding API confirmed working (768-dim vectors from `gemini-embedding-001`)
 - Node 22 installed, clawdbot linked via `npm link`
-- 5,945 Claude session files in `~/.claude/projects/`
+- 4,105 Claude session files in `~/.claude/projects/`
 
-What's broken:
-- `clawdbot memory status` reports 17,266 chunks but **the database has 0 rows**
-- Every `clawdbot memory search` returns "No matches"
-- `clawdbot memory index` reports success but writes nothing to DB
-- Verified with: `node --experimental-sqlite -e` querying `~/.clawdbot/memory/main.sqlite` directly — chunks table is empty
+### Previous provider: local embeddings
 
-How to verify DB state (don't trust `clawdbot memory status`):
+The DB was originally indexed with the local provider (`node-llama-cpp` + `embeddinggemma-300M-Q8_0.gguf`). 15,312 embedding cache entries remain from that era. Local is no longer viable:
+- Config explicitly switched to `provider: "gemini"`
+- `~/.cache/llama-cpp-agent/` doesn't exist (model not downloaded)
+- `node-llama-cpp` has ESM top-level-await issues with `require()`
+- Would need `pnpm approve-builds` + model download to restore
+
+The stale local-provider cache entries in the DB are harmless but useless — cache lookups filter by `(provider, model, provider_key)` so gemini queries never hit them.
+
+### Root cause and fix (2026-01-28)
+
+`manager.ts:runSync()` triggered `runSafeReindex` (atomic temp DB swap) on every call because `needsFullReindex` included `(vectorReady && !meta?.vectorDims)`. The meta had no `vectorDims` (written during previous local-provider era). The atomic reindex tried to embed 4,105 files via Gemini, got killed before finishing, orphaned ~1.5GB of temp DBs. Main DB stayed empty.
+
+**Fix applied:**
+- Removed `vectorDims` from `needsFullReindex` — missing vectorDims no longer forces atomic reindex
+- Added `dbIsEmpty` detection — when meta matches but chunks=0, all sources sync incrementally (progress survives kills)
+- Write meta after incremental sync — persists `vectorDims` to prevent reindex loop
+- Clean orphaned temp files on sync start
+- Wrapped `doSyncClaudeSessions` in try/catch in both sync paths — one source failing doesn't block others
+
+**Next:** Run `clawdbot memory index` and verify chunks populate:
 ```bash
 node --experimental-sqlite -e '
 const { DatabaseSync } = require("node:sqlite");
-const db = new DatabaseSync(require("os").homedir() + "/.clawdbot/memory/main.sqlite", { open: true, readOnly: true });
+const db = new DatabaseSync(require("os").homedir() + "/.clawdbot/memory/main.sqlite", { open: true });
 console.log("chunks:", db.prepare("SELECT count(*) as n FROM chunks").get().n);
+console.log("files:", db.prepare("SELECT count(*) as n FROM files").get().n);
 db.close();
 '
 ```
-
-Where to debug:
-- `src/memory/manager.ts` — `sync()` and `indexFile()` methods
-- `src/memory/sync-claude-sessions.ts` — does it call indexFile?
-- `src/memory/embeddings-gemini.ts` — API key resolves correctly, embeddings API works via direct fetch
-- Check if `npm link` is running stale dist/ — rebuild with `npx tsc` and retry
 
 Spec docs: `docs/mods/unified-memory-beads.md`, rendered HTML in `output/index.html`
 
