@@ -1,0 +1,1316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>moltbot</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/panzoom@9.4.3/dist/panzoom.min.js"></script>
+    <style>
+        :root {
+            --color-bg: #ffffff;
+            --color-text: #1f2937;
+            --color-border: #e5e7eb;
+            --color-link: #2563eb;
+            --color-tab-active: #2563eb;
+            --color-tab-inactive: #6b7280;
+            /* Badge colors */
+            --badge-open-bg: #e5e7eb;
+            --badge-open-text: #4b5563;
+            --badge-in-progress-bg: #dbeafe;
+            --badge-in-progress-text: #1d4ed8;
+            --badge-blocked-bg: #ffedd5;
+            --badge-blocked-text: #c2410c;
+            --badge-closed-bg: #dcfce7;
+            --badge-closed-text: #15803d;
+            /* Stat colors */
+            --stat-module: #f59e0b;
+            --stat-closed: #22c55e;
+            --stat-in-progress: #3b82f6;
+            --stat-blocked: #ef4444;
+            --stat-open: #9ca3af;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --color-bg: #111827;
+                --color-text: #f3f4f6;
+                --color-border: #374151;
+                --color-link: #60a5fa;
+                --color-tab-active: #60a5fa;
+                --color-tab-inactive: #9ca3af;
+                /* Badge colors - darker backgrounds, lighter text */
+                --badge-open-bg: #374151;
+                --badge-open-text: #d1d5db;
+                --badge-in-progress-bg: #1e3a5f;
+                --badge-in-progress-text: #93c5fd;
+                --badge-blocked-bg: #7c2d12;
+                --badge-blocked-text: #fed7aa;
+                --badge-closed-bg: #14532d;
+                --badge-closed-text: #86efac;
+                /* Stat colors - brighter for dark mode */
+                --stat-module: #fbbf24;
+                --stat-closed: #4ade80;
+                --stat-in-progress: #60a5fa;
+                --stat-blocked: #f87171;
+                --stat-open: #d1d5db;
+            }
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            color: var(--color-text);
+            background: var(--color-bg);
+            margin: 0;
+            padding: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+        }
+
+        h1 { margin-bottom: 0.5rem; }
+        h2 { margin-top: 1.5rem; }
+        h3 { margin-top: 1rem; }
+
+        a { color: var(--color-link); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        /* Tab navigation - visually at top via order, sticky when scrolling */
+        .tab-nav {
+            display: flex;
+            gap: 0;
+            border-bottom: 2px solid var(--color-border);
+            margin-bottom: 1.5rem;
+            position: sticky;
+            top: 0;
+            order: -1;
+            background: var(--color-bg);
+            z-index: 100;
+            padding-top: 0.5rem;
+        }
+
+        .tab-nav a {
+            padding: 0.75rem 1.5rem;
+            color: var(--color-tab-inactive);
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+            font-weight: 500;
+        }
+
+        .tab-nav a:hover {
+            color: var(--color-tab-active);
+            text-decoration: none;
+        }
+
+        /* Floating TOC navigation */
+        .floating-toc {
+            display: none;
+            position: fixed;
+            right: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 40px;
+            background: var(--color-bg);
+            border: 1px solid var(--color-border);
+            border-right: none;
+            border-radius: 0.5rem 0 0 0.5rem;
+            transition: width 0.2s ease;
+            z-index: 200;
+            box-shadow: -2px 0 8px rgba(0,0,0,0.1);
+        }
+
+        .floating-toc:hover,
+        .floating-toc.open {
+            width: 200px;
+        }
+
+        .floating-toc-toggle {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 40px;
+            height: 40px;
+            cursor: pointer;
+            font-size: 1.25rem;
+            color: var(--color-tab-inactive);
+        }
+
+        .floating-toc:hover .floating-toc-toggle,
+        .floating-toc.open .floating-toc-toggle {
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+
+        .floating-toc-content {
+            opacity: 0;
+            visibility: hidden;
+            padding: 0.5rem;
+            padding-top: 2.5rem;
+            transition: opacity 0.2s ease, visibility 0.2s ease;
+            max-height: 70vh;
+            overflow-y: auto;
+        }
+
+        .floating-toc:hover .floating-toc-content,
+        .floating-toc.open .floating-toc-content {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .floating-toc-title {
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            color: var(--color-tab-inactive);
+            margin-bottom: 0.5rem;
+            padding: 0 0.5rem;
+        }
+
+        .floating-toc-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .floating-toc-list a {
+            display: block;
+            padding: 0.375rem 0.5rem;
+            font-size: 0.875rem;
+            color: var(--color-text);
+            border-radius: 0.25rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .floating-toc-list a:hover {
+            background: var(--color-border);
+            text-decoration: none;
+        }
+
+        /* Tab content - all hidden by default */
+        .tab-content {
+            display: none;
+        }
+
+        /* Show content based on :target */
+        #overview:target,
+        #modules:target,
+        #progress:target {
+            display: block;
+        }
+
+        /* Active tab styling based on :target */
+        #overview:target ~ .tab-nav a[href="#overview"],
+        #modules:target ~ .tab-nav a[href="#modules"],
+        #progress:target ~ .tab-nav a[href="#progress"] {
+            color: var(--color-tab-active);
+            border-bottom-color: var(--color-tab-active);
+        }
+
+        /* Default: show overview when no target */
+        .tab-content#overview {
+            display: block;
+        }
+
+        #modules:target ~ #overview,
+        #progress:target ~ #overview {
+            display: none;
+        }
+
+        /* Status badges */
+        .badge {
+            display: inline-block;
+            padding: 0.125rem 0.5rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            text-transform: uppercase;
+        }
+
+        .badge-open {
+            background: var(--badge-open-bg);
+            color: var(--badge-open-text);
+        }
+
+        .badge-in_progress {
+            background: var(--badge-in-progress-bg);
+            color: var(--badge-in-progress-text);
+        }
+
+        .badge-blocked {
+            background: var(--badge-blocked-bg);
+            color: var(--badge-blocked-text);
+        }
+
+        .badge-closed {
+            background: var(--badge-closed-bg);
+            color: var(--badge-closed-text);
+        }
+
+        /* Progress bar */
+        .progress-bar {
+            width: 100%;
+            height: 1.5rem;
+            background: var(--color-border);
+            border-radius: 0.5rem;
+            overflow: hidden;
+            display: flex;
+        }
+
+        .progress-segment {
+            height: 100%;
+            transition: width 0.3s ease;
+        }
+
+        .progress-closed { background: #22c55e; }
+        .progress-in_progress { background: #3b82f6; }
+        .progress-blocked { background: #f97316; }
+        .progress-open { background: #9ca3af; }
+
+        /* Epic and task cards */
+        .epic {
+            border: 1px solid var(--color-border);
+            border-radius: 0.5rem;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            scroll-margin-top: 4rem;
+        }
+
+        .epic-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.5rem;
+        }
+
+        .task-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .task-item {
+            padding: 0.5rem 0;
+            border-bottom: 1px solid var(--color-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .task-item:last-child {
+            border-bottom: none;
+        }
+
+        .task-id {
+            font-family: monospace;
+            font-size: 0.875rem;
+            color: var(--color-tab-inactive);
+            margin-right: 0.5rem;
+        }
+
+        /* Mermaid diagram container with pan-zoom */
+        .diagram-container {
+            position: relative;
+            border: 1px solid var(--color-border);
+            border-radius: 0.5rem;
+            margin: 1rem 0;
+            min-height: 400px;
+            max-height: 80vh;
+            background: var(--color-bg);
+            overflow: hidden;
+        }
+
+        .diagram-inner {
+            cursor: grab;
+        }
+
+        .diagram-inner:active {
+            cursor: grabbing;
+        }
+
+        .diagram-controls {
+            position: absolute;
+            top: 0.5rem;
+            right: 0.5rem;
+            display: flex;
+            gap: 0.25rem;
+            z-index: 10;
+        }
+
+        .diagram-controls button {
+            width: 2rem;
+            height: 2rem;
+            border: 1px solid var(--color-border);
+            border-radius: 0.25rem;
+            background: var(--color-bg);
+            color: var(--color-text);
+            cursor: pointer;
+            font-size: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .diagram-controls button:hover {
+            background: var(--color-border);
+        }
+
+        /* Graph tabs for per-module views */
+        .graph-tabs {
+            display: flex;
+            overflow-x: auto;
+            scrollbar-width: thin;
+            gap: 0;
+            border-bottom: 1px solid var(--color-border);
+            margin-bottom: 0;
+        }
+
+        .graph-tabs::-webkit-scrollbar {
+            height: 4px;
+        }
+
+        .graph-tabs::-webkit-scrollbar-thumb {
+            background: var(--color-border);
+            border-radius: 2px;
+        }
+
+        .graph-tab {
+            padding: 0.5rem 1rem;
+            border: none;
+            background: transparent;
+            color: var(--color-tab-inactive);
+            cursor: pointer;
+            white-space: nowrap;
+            font-size: 0.875rem;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -1px;
+            transition: color 0.15s, border-color 0.15s;
+        }
+
+        .graph-tab:hover {
+            color: var(--color-tab-active);
+        }
+
+        .graph-tab.active {
+            color: var(--color-tab-active);
+            border-bottom-color: var(--color-tab-active);
+        }
+
+        .graph-view {
+            display: none;
+        }
+
+        .graph-view.active {
+            display: block;
+        }
+
+        /* Stats grid */
+        .stats-grid {
+            display: flex;
+            gap: 0.75rem;
+            margin: 1rem 0;
+        }
+
+        .stat-card {
+            padding: 0.5rem 1rem;
+            border: 1px solid var(--color-border);
+            border-radius: 0.375rem;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+
+        .stat-label {
+            font-size: 0.75rem;
+            color: var(--color-tab-inactive);
+        }
+
+        /* Epic content sections */
+        .epic-content {
+            margin-top: 0.5rem;
+        }
+
+        .epic-content blockquote {
+            border-left: 4px solid var(--color-tab-active);
+            padding-left: 1rem;
+            margin: 0.5rem 0;
+            color: var(--color-tab-inactive);
+            font-style: italic;
+        }
+
+        .epic-content h4 {
+            font-size: 1rem;
+            margin: 1rem 0 0.5rem 0;
+            color: var(--color-text);
+        }
+
+        .epic-section {
+            margin-bottom: 1rem;
+        }
+
+        .epic-section table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.875rem;
+            margin: 0.5rem 0;
+        }
+
+        .epic-section th,
+        .epic-section td {
+            border: 1px solid var(--color-border);
+            padding: 0.5rem;
+            text-align: left;
+        }
+
+        .epic-section th {
+            background: var(--color-border);
+        }
+
+        .epic-section pre {
+            background: var(--color-border);
+            padding: 1rem;
+            border-radius: 0.25rem;
+            overflow-x: auto;
+            font-size: 0.875rem;
+        }
+
+        .epic-section code {
+            font-family: monospace;
+            font-size: 0.875rem;
+        }
+
+        .epic-section p code {
+            background: var(--color-border);
+            padding: 0.125rem 0.25rem;
+            border-radius: 0.125rem;
+        }
+
+        .epic-section strong {
+            font-weight: 600;
+        }
+
+        /* Overview content section */
+        .overview-content {
+            margin-top: 2rem;
+            padding-top: 1rem;
+            border-top: 1px solid var(--color-border);
+        }
+
+        .overview-content h2 {
+            font-size: 1.25rem;
+            margin-top: 1.5rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .overview-content h3 {
+            font-size: 1.1rem;
+            margin-top: 1rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .overview-content table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.875rem;
+            margin: 0.5rem 0;
+        }
+
+        .overview-content th,
+        .overview-content td {
+            border: 1px solid var(--color-border);
+            padding: 0.5rem;
+            text-align: left;
+        }
+
+        .overview-content th {
+            background: var(--color-border);
+        }
+
+        .overview-content pre {
+            background: var(--color-border);
+            padding: 1rem;
+            border-radius: 0.25rem;
+            overflow-x: auto;
+            font-size: 0.875rem;
+        }
+
+        .overview-content code {
+            font-family: monospace;
+            font-size: 0.875rem;
+        }
+
+        .overview-content p code {
+            background: var(--color-border);
+            padding: 0.125rem 0.25rem;
+            border-radius: 0.125rem;
+        }
+
+        .overview-content ul,
+        .overview-content ol {
+            padding-left: 1.5rem;
+        }
+
+        .overview-content li {
+            margin-bottom: 0.25rem;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>moltbot</h1>
+        
+    </header>
+
+    <!-- Tab sections - #overview MUST come LAST for CSS :target ~ #overview sibling selectors to work -->
+    <section id="modules" class="tab-content">
+        <h2>Modules</h2>
+        
+        <div class="epic" id="module-moltbot-sz1">
+            <div class="epic-header">
+                <h3>Unified Memory: Index Claude Code sessions</h3>
+                <span class="badge badge-open">open</span>
+            </div>
+            
+            
+            <div class="epic-content">
+                
+                <blockquote>Index ~/.claude/projects/ sessions into moltbot memory, enabling search across phone (Telegram) and direct CLI usage.</blockquote>
+                
+                
+                <h4>Key Insight</h4>
+                <div class="epic-section"><p><strong>Separate parser for Claude format, not a format flag.</strong> Claude JSONL uses <code>type: "user"/"assistant"</code> vs moltbot <code>type: "message"</code>. Rather than adding conditionals to existing parser, create <code>claude-session-files.ts</code> alongside <code>session-files.ts</code>. Keeps parsers focused and testable.</p></div>
+                
+                
+                <h4>Architecture</h4>
+                <div class="epic-section"><p>claude-sessions is a <strong>file indexing pipeline</strong> parallel to existing sessions source:</p>
+<pre><code>~/.claude/projects/*/*.jsonl
+    → listClaudeSessionFiles()
+    → buildClaudeSessionEntry() [extracts text, project slug]
+    → deduplicateBySessionId() [skip moltbot-originated sessions]
+    → indexFile() [existing chunking + embedding]
+    → search() [with optional project filter]
+</code></pre></div>
+                
+                
+                <h4>Public API</h4>
+                <div class="epic-section"><table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Signature</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>listClaudeSessionFiles</code></td>
+<td><code>() -&gt; Promise&lt;string[]&gt;</code></td>
+<td>Glob ~/.claude/projects/<em>/</em>.jsonl</td>
+</tr>
+<tr>
+<td><code>buildClaudeSessionEntry</code></td>
+<td><code>(absPath: string) -&gt; Promise&lt;ClaudeSessionEntry \| null&gt;</code></td>
+<td>Parse Claude JSONL, extract project</td>
+</tr>
+<tr>
+<td><code>extractProjectSlug</code></td>
+<td><code>(sessionPath: string) -&gt; string</code></td>
+<td>-home-ben-projects-mine → mine</td>
+</tr>
+<tr>
+<td><code>loadMoltbotSessionIds</code></td>
+<td><code>(agentId: string) -&gt; Promise&lt;Set&lt;string&gt;&gt;</code></td>
+<td>Get Claude session IDs from moltbot sessions.json</td>
+</tr>
+<tr>
+<td><code>syncClaudeSessionFiles</code></td>
+<td><code>(params) -&gt; Promise&lt;void&gt;</code></td>
+<td>Index with deduplication</td>
+</tr>
+</tbody>
+</table></div>
+                
+                
+                <h4>Types</h4>
+                <div class="epic-section"><pre><code class="language-typescript">type ClaudeSessionEntry = SessionFileEntry &amp; {
+  project: string;  // extracted slug (e.g., &quot;mine&quot;, &quot;moltbot&quot;)
+  claudeSessionId: string;  // from filename for dedup
+};
+
+// Extended search options
+interface MemorySearchOptions {
+  maxResults?: number;
+  minScore?: number;
+  sessionKey?: string;
+  project?: string;  // filter to specific Claude Code project
+}
+</code></pre></div>
+                
+                
+                <h4>Modules</h4>
+                <div class="epic-section"><table>
+<thead>
+<tr>
+<th>Module</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>claude-session-files</td>
+<td>Parse Claude Code JSONL format, extract project metadata</td>
+</tr>
+<tr>
+<td>sync-claude-sessions</td>
+<td>Index claude-sessions source with deduplication</td>
+</tr>
+<tr>
+<td>memory-search (extend)</td>
+<td>Add claude-sessions to sources type</td>
+</tr>
+<tr>
+<td>manager (extend)</td>
+<td>Integrate claude-sessions sync</td>
+</tr>
+<tr>
+<td>memory-cli (extend)</td>
+<td>Add --project flag</td>
+</tr>
+</tbody>
+</table></div>
+                
+                <h4>Config Schema</h4>
+                <div class="epic-section"><pre><code class="language-json">{
+  &quot;sources&quot;: [&quot;memory&quot;, &quot;sessions&quot;, &quot;claude-sessions&quot;],
+  &quot;claudeSessions&quot;: {
+    &quot;enabled&quot;: true,
+    &quot;path&quot;: &quot;~/.claude/projects&quot;
+  }
+}
+</code></pre>
+<hr />
+<p>Exit criteria: <code>clawdbot memory search "query" --project mine</code> returns results from ~/.claude/projects/-home-ben-projects-mine/</p></div>
+                
+            </div>
+            
+            
+            <ul class="task-list">
+                
+                <li class="task-item">
+                    <span>
+                        <span class="task-id">moltbot-sz1.2</span>
+                        UC-UM-2: Add claudeSessions config schema
+                    </span>
+                    <span class="badge badge-open">open</span>
+                </li>
+                
+                <li class="task-item">
+                    <span>
+                        <span class="task-id">moltbot-sz1.1</span>
+                        UC-UM-1: Add claude-sessions source type
+                    </span>
+                    <span class="badge badge-open">open</span>
+                </li>
+                
+                <li class="task-item">
+                    <span>
+                        <span class="task-id">moltbot-sz1.8</span>
+                        UC-UM-8: Sync Claude session files
+                    </span>
+                    <span class="badge badge-open">open</span>
+                </li>
+                
+                <li class="task-item">
+                    <span>
+                        <span class="task-id">moltbot-sz1.7</span>
+                        UC-UM-7: Add project column to chunks table
+                    </span>
+                    <span class="badge badge-open">open</span>
+                </li>
+                
+                <li class="task-item">
+                    <span>
+                        <span class="task-id">moltbot-sz1.5</span>
+                        UC-UM-5: Parse Claude JSONL format
+                    </span>
+                    <span class="badge badge-open">open</span>
+                </li>
+                
+                <li class="task-item">
+                    <span>
+                        <span class="task-id">moltbot-sz1.4</span>
+                        UC-UM-4: List Claude session files
+                    </span>
+                    <span class="badge badge-open">open</span>
+                </li>
+                
+                <li class="task-item">
+                    <span>
+                        <span class="task-id">moltbot-sz1.3</span>
+                        UC-UM-3: Extract project slug from session path
+                    </span>
+                    <span class="badge badge-open">open</span>
+                </li>
+                
+                <li class="task-item">
+                    <span>
+                        <span class="task-id">moltbot-sz1.11</span>
+                        UC-UM-11: Add --project flag to memory CLI
+                    </span>
+                    <span class="badge badge-open">open</span>
+                </li>
+                
+                <li class="task-item">
+                    <span>
+                        <span class="task-id">moltbot-sz1.10</span>
+                        UC-UM-10: Add project filter to search
+                    </span>
+                    <span class="badge badge-open">open</span>
+                </li>
+                
+                <li class="task-item">
+                    <span>
+                        <span class="task-id">moltbot-sz1.9</span>
+                        UC-UM-9: Integrate claude-sessions sync into manager
+                    </span>
+                    <span class="badge badge-open">open</span>
+                </li>
+                
+                <li class="task-item">
+                    <span>
+                        <span class="task-id">moltbot-sz1.6</span>
+                        UC-UM-6: Load moltbot session IDs for dedup
+                    </span>
+                    <span class="badge badge-open">open</span>
+                </li>
+                
+                <li class="task-item">
+                    <span>
+                        <span class="task-id">moltbot-sz1.12</span>
+                        UC-UM-12: Add file watcher for Claude projects
+                    </span>
+                    <span class="badge badge-open">open</span>
+                </li>
+                
+            </ul>
+            
+        </div>
+        
+    </section>
+
+    <section id="progress" class="tab-content">
+        <h2>Progress</h2>
+        
+        <div class="progress-bar">
+            
+            <div class="progress-segment progress-closed" style="width: 0.0%"></div>
+            <div class="progress-segment progress-in_progress" style="width: 0.0%"></div>
+            <div class="progress-segment progress-blocked" style="width: 0.0%"></div>
+            <div class="progress-segment progress-open" style="width: 100.0%"></div>
+            
+        </div>
+        <p>
+            <span class="badge badge-closed">0 closed</span>
+            <span class="badge badge-in_progress">0 in progress</span>
+            <span class="badge badge-blocked">0 blocked</span>
+            <span class="badge badge-open">12 open</span>
+        </p>
+        
+
+        <h3>Task Status by Epic</h3>
+        
+        <div class="epic" id="progress-moltbot-sz1">
+            <div class="epic-header">
+                <strong>Unified Memory: Index Claude Code sessions</strong>
+                <span class="badge badge-open">open</span>
+            </div>
+            
+            <ul class="task-list">
+                
+                <li class="task-item">
+                    <span>
+                        <span class="task-id">moltbot-sz1.2</span>
+                        UC-UM-2: Add claudeSessions config schema
+                    </span>
+                    <span class="badge badge-open">open</span>
+                </li>
+                
+                <li class="task-item">
+                    <span>
+                        <span class="task-id">moltbot-sz1.1</span>
+                        UC-UM-1: Add claude-sessions source type
+                    </span>
+                    <span class="badge badge-open">open</span>
+                </li>
+                
+                <li class="task-item">
+                    <span>
+                        <span class="task-id">moltbot-sz1.8</span>
+                        UC-UM-8: Sync Claude session files
+                    </span>
+                    <span class="badge badge-open">open</span>
+                </li>
+                
+                <li class="task-item">
+                    <span>
+                        <span class="task-id">moltbot-sz1.7</span>
+                        UC-UM-7: Add project column to chunks table
+                    </span>
+                    <span class="badge badge-open">open</span>
+                </li>
+                
+                <li class="task-item">
+                    <span>
+                        <span class="task-id">moltbot-sz1.5</span>
+                        UC-UM-5: Parse Claude JSONL format
+                    </span>
+                    <span class="badge badge-open">open</span>
+                </li>
+                
+                <li class="task-item">
+                    <span>
+                        <span class="task-id">moltbot-sz1.4</span>
+                        UC-UM-4: List Claude session files
+                    </span>
+                    <span class="badge badge-open">open</span>
+                </li>
+                
+                <li class="task-item">
+                    <span>
+                        <span class="task-id">moltbot-sz1.3</span>
+                        UC-UM-3: Extract project slug from session path
+                    </span>
+                    <span class="badge badge-open">open</span>
+                </li>
+                
+                <li class="task-item">
+                    <span>
+                        <span class="task-id">moltbot-sz1.11</span>
+                        UC-UM-11: Add --project flag to memory CLI
+                    </span>
+                    <span class="badge badge-open">open</span>
+                </li>
+                
+                <li class="task-item">
+                    <span>
+                        <span class="task-id">moltbot-sz1.10</span>
+                        UC-UM-10: Add project filter to search
+                    </span>
+                    <span class="badge badge-open">open</span>
+                </li>
+                
+                <li class="task-item">
+                    <span>
+                        <span class="task-id">moltbot-sz1.9</span>
+                        UC-UM-9: Integrate claude-sessions sync into manager
+                    </span>
+                    <span class="badge badge-open">open</span>
+                </li>
+                
+                <li class="task-item">
+                    <span>
+                        <span class="task-id">moltbot-sz1.6</span>
+                        UC-UM-6: Load moltbot session IDs for dedup
+                    </span>
+                    <span class="badge badge-open">open</span>
+                </li>
+                
+                <li class="task-item">
+                    <span>
+                        <span class="task-id">moltbot-sz1.12</span>
+                        UC-UM-12: Add file watcher for Claude projects
+                    </span>
+                    <span class="badge badge-open">open</span>
+                </li>
+                
+            </ul>
+            
+        </div>
+        
+    </section>
+
+    <section id="overview" class="tab-content">
+        <h2>Overview</h2>
+        <p>Project <strong>moltbot</strong> with 1 epic(s).</p>
+        
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value" style="color: var(--stat-module);">1</div>
+                <div class="stat-label">Modules</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">12</div>
+                <div class="stat-label">Total Tasks</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" style="color: var(--stat-closed);">0</div>
+                <div class="stat-label">Completed</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" style="color: var(--stat-in-progress);">0</div>
+                <div class="stat-label">In Progress</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" style="color: var(--stat-blocked);">0</div>
+                <div class="stat-label">Blocked</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" style="color: var(--stat-open);">12</div>
+                <div class="stat-label">Open</div>
+            </div>
+        </div>
+        
+        
+        <h3>Dependency Graph</h3>
+        <div class="graph-tabs">
+            <button class="graph-tab active" data-graph="overview">All</button>
+            
+            <button class="graph-tab" data-graph="moltbot-sz1">Unified Memory</button>
+            
+        </div>
+        <div class="graph-view active" id="graph-overview">
+            <div class="diagram-container">
+                <div class="diagram-controls">
+                    <button class="zoom-in" title="Zoom in">+</button>
+                    <button class="zoom-out" title="Zoom out">−</button>
+                    <button class="zoom-reset" title="Reset">⟲</button>
+                </div>
+                <div class="diagram-inner">
+                    <pre class="mermaid">flowchart TD
+    moltbot_sz1(["Unified Memory: Index Claude Code sessions"])
+    moltbot_sz1_2["add_claudesessions_config_schema"]
+    moltbot_sz1 -.-> moltbot_sz1_2
+    moltbot_sz1_1["add_claude_sessions_source_type"]
+    moltbot_sz1 -.-> moltbot_sz1_1
+    moltbot_sz1_8["sync_claude_session_files"]
+    moltbot_sz1 -.-> moltbot_sz1_8
+    moltbot_sz1_7["add_project_column_to_chunks_table"]
+    moltbot_sz1 -.-> moltbot_sz1_7
+    moltbot_sz1_5["parse_claude_jsonl_format"]
+    moltbot_sz1 -.-> moltbot_sz1_5
+    moltbot_sz1_4["list_claude_session_files"]
+    moltbot_sz1 -.-> moltbot_sz1_4
+    moltbot_sz1_3["extract_project_slug_from_session_path"]
+    moltbot_sz1 -.-> moltbot_sz1_3
+    moltbot_sz1_11["add_project_flag_to_memory_cli"]
+    moltbot_sz1 -.-> moltbot_sz1_11
+    moltbot_sz1_10["add_project_filter_to_search"]
+    moltbot_sz1 -.-> moltbot_sz1_10
+    moltbot_sz1_9["integrate_claude_sessions_sync_into_manager"]
+    moltbot_sz1 -.-> moltbot_sz1_9
+    moltbot_sz1_6["load_moltbot_session_ids_for_dedup"]
+    moltbot_sz1 -.-> moltbot_sz1_6
+    moltbot_sz1_12["add_file_watcher_for_claude_projects"]
+    moltbot_sz1 -.-> moltbot_sz1_12
+
+    classDef epic fill:#f59e0b,stroke:#d97706,color:#fff
+    classDef closed fill:#22c55e,stroke:#16a34a,color:#fff
+    classDef in_progress fill:#3b82f6,stroke:#2563eb,color:#fff
+    classDef blocked fill:#ef4444,stroke:#dc2626,color:#fff
+    classDef open fill:#9ca3af,stroke:#6b7280,color:#fff
+    class moltbot_sz1 epic
+    class moltbot_sz1_10 open
+    class moltbot_sz1_3 open
+    class moltbot_sz1_6 open
+    class moltbot_sz1_1 open
+    class moltbot_sz1_2 open
+    class moltbot_sz1_9 open
+    class moltbot_sz1_4 open
+    class moltbot_sz1_5 open
+    class moltbot_sz1_12 open
+    class moltbot_sz1_11 open
+    class moltbot_sz1_7 open
+    class moltbot_sz1_8 open</pre>
+                </div>
+            </div>
+        </div>
+        
+        <div class="graph-view" id="graph-moltbot-sz1">
+            <div class="diagram-container">
+                <div class="diagram-controls">
+                    <button class="zoom-in" title="Zoom in">+</button>
+                    <button class="zoom-out" title="Zoom out">−</button>
+                    <button class="zoom-reset" title="Reset">⟲</button>
+                </div>
+                <div class="diagram-inner">
+                    <pre class="mermaid">flowchart TD
+    moltbot_sz1(["Unified Memory: Index Claude Code sessions"])
+    moltbot_sz1_2["add_claudesessions_config_schema"]
+    moltbot_sz1 -.-> moltbot_sz1_2
+    moltbot_sz1_1["add_claude_sessions_source_type"]
+    moltbot_sz1 -.-> moltbot_sz1_1
+    moltbot_sz1_8["sync_claude_session_files"]
+    moltbot_sz1 -.-> moltbot_sz1_8
+    moltbot_sz1_7["add_project_column_to_chunks_table"]
+    moltbot_sz1 -.-> moltbot_sz1_7
+    moltbot_sz1_5["parse_claude_jsonl_format"]
+    moltbot_sz1 -.-> moltbot_sz1_5
+    moltbot_sz1_4["list_claude_session_files"]
+    moltbot_sz1 -.-> moltbot_sz1_4
+    moltbot_sz1_3["extract_project_slug_from_session_path"]
+    moltbot_sz1 -.-> moltbot_sz1_3
+    moltbot_sz1_11["add_project_flag_to_memory_cli"]
+    moltbot_sz1 -.-> moltbot_sz1_11
+    moltbot_sz1_10["add_project_filter_to_search"]
+    moltbot_sz1 -.-> moltbot_sz1_10
+    moltbot_sz1_9["integrate_claude_sessions_sync_into_manager"]
+    moltbot_sz1 -.-> moltbot_sz1_9
+    moltbot_sz1_6["load_moltbot_session_ids_for_dedup"]
+    moltbot_sz1 -.-> moltbot_sz1_6
+    moltbot_sz1_12["add_file_watcher_for_claude_projects"]
+    moltbot_sz1 -.-> moltbot_sz1_12
+
+    classDef epic fill:#f59e0b,stroke:#d97706,color:#fff
+    classDef closed fill:#22c55e,stroke:#16a34a,color:#fff
+    classDef in_progress fill:#3b82f6,stroke:#2563eb,color:#fff
+    classDef blocked fill:#ef4444,stroke:#dc2626,color:#fff
+    classDef open fill:#9ca3af,stroke:#6b7280,color:#fff
+    class moltbot_sz1 epic
+    class moltbot_sz1_10 open
+    class moltbot_sz1_3 open
+    class moltbot_sz1_6 open
+    class moltbot_sz1_1 open
+    class moltbot_sz1_2 open
+    class moltbot_sz1_9 open
+    class moltbot_sz1_4 open
+    class moltbot_sz1_5 open
+    class moltbot_sz1_12 open
+    class moltbot_sz1_11 open
+    class moltbot_sz1_7 open
+    class moltbot_sz1_8 open</pre>
+                </div>
+            </div>
+        </div>
+        
+        
+        
+    </section>
+
+    <!-- Tab navigation - placed after content for CSS :target sibling selection -->
+    <nav class="tab-nav">
+        <a href="#overview">Overview</a>
+        <a href="#modules">Modules</a>
+        <a href="#progress">Progress</a>
+    </nav>
+
+    <!-- Floating TOC for Modules tab -->
+    <nav class="floating-toc" id="modules-toc">
+        <div class="floating-toc-toggle">≡</div>
+        <div class="floating-toc-content">
+            <div class="floating-toc-title">Modules</div>
+            <ul class="floating-toc-list">
+                
+                <li><a href="#module-moltbot-sz1">Unified Memory</a></li>
+                
+            </ul>
+        </div>
+    </nav>
+
+    <!-- Floating TOC for Progress tab -->
+    <nav class="floating-toc" id="progress-toc">
+        <div class="floating-toc-toggle">≡</div>
+        <div class="floating-toc-content">
+            <div class="floating-toc-title">Modules</div>
+            <ul class="floating-toc-list">
+                
+                <li><a href="#progress-moltbot-sz1">Unified Memory</a></li>
+                
+            </ul>
+        </div>
+    </nav>
+
+    <script>
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+        mermaid.initialize({
+            startOnLoad: false,
+            theme: prefersDark ? 'dark' : 'neutral'
+        });
+
+        // Track initialized views and panzoom instances
+        const initializedViews = new Set();
+        const panzoomInstances = new Map();
+
+        // Initialize a single graph view (only when visible)
+        async function initGraphView(viewEl) {
+            if (initializedViews.has(viewEl.id)) return;
+
+            const mermaidEl = viewEl.querySelector('.mermaid');
+            const innerEl = viewEl.querySelector('.diagram-inner');
+            const container = viewEl.querySelector('.diagram-container');
+            if (!mermaidEl || !innerEl) return;
+
+            // Render mermaid
+            await mermaid.run({ nodes: [mermaidEl] });
+
+            // Initialize panzoom after a small delay to ensure SVG is rendered
+            await new Promise(r => setTimeout(r, 50));
+
+            const pz = panzoom(innerEl, {
+                maxZoom: 5,
+                minZoom: 0.1,
+                initialZoom: 1.0,
+                bounds: false,
+                boundsPadding: 0.1
+            });
+            panzoomInstances.set(viewEl.id, pz);
+
+            // Add click-to-zoom on nodes
+            const svg = mermaidEl.querySelector('svg');
+            if (svg) {
+                svg.querySelectorAll('.node').forEach(node => {
+                    node.style.cursor = 'pointer';
+                    node.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const containerRect = container.getBoundingClientRect();
+                        const innerRect = innerEl.getBoundingClientRect();
+                        const nodeRect = node.getBoundingClientRect();
+                        const t = pz.getTransform();
+
+                        // Node center in screen coords
+                        const nodeCenterX = nodeRect.left + nodeRect.width / 2;
+                        const nodeCenterY = nodeRect.top + nodeRect.height / 2;
+
+                        // Node's original position in innerEl's coordinate space
+                        // innerRect already includes the panzoom transform, so:
+                        // screenPos = innerRect.left + nodeOrigX * scale
+                        const nodeOrigX = (nodeCenterX - innerRect.left) / t.scale;
+                        const nodeOrigY = (nodeCenterY - innerRect.top) / t.scale;
+
+                        // Calculate baseOffset (innerEl's position relative to container, before transform)
+                        const baseOffsetX = innerRect.left - containerRect.left - t.x;
+                        const baseOffsetY = innerRect.top - containerRect.top - t.y;
+
+                        const centerX = containerRect.width / 2;
+                        const centerY = containerRect.height / 2;
+                        const newScale = 2;
+
+                        // We want: containerLeft + baseOffsetX + nodeOrigX * newScale + newTx = containerLeft + centerX
+                        // So: newTx = centerX - baseOffsetX - nodeOrigX * newScale
+                        const newTx = centerX - baseOffsetX - nodeOrigX * newScale;
+                        const newTy = centerY - baseOffsetY - nodeOrigY * newScale;
+
+                        // Apply the transform
+                        pz.zoomAbs(0, 0, newScale);
+                        pz.moveTo(newTx, newTy);
+                    });
+                });
+            }
+
+            // Wire up control buttons for this view
+            container.querySelector('.zoom-in')?.addEventListener('click', () => {
+                const t = pz.getTransform();
+                pz.zoomAbs(t.x, t.y, t.scale * 1.25);
+            });
+            container.querySelector('.zoom-out')?.addEventListener('click', () => {
+                const t = pz.getTransform();
+                pz.zoomAbs(t.x, t.y, t.scale * 0.8);
+            });
+            container.querySelector('.zoom-reset')?.addEventListener('click', () => {
+                pz.moveTo(0, 0);
+                pz.zoomAbs(0, 0, 1.0);
+            });
+
+            initializedViews.add(viewEl.id);
+        }
+
+        // Initialize the active graph view on page load
+        async function initActiveGraph() {
+            const activeView = document.querySelector('.graph-view.active');
+            if (activeView) {
+                await initGraphView(activeView);
+            }
+        }
+
+        // Handle graph tab switching
+        function initGraphTabs() {
+            const tabs = document.querySelectorAll('.graph-tab');
+            const views = document.querySelectorAll('.graph-view');
+
+            tabs.forEach(tab => {
+                tab.addEventListener('click', async () => {
+                    const targetId = tab.dataset.graph;
+
+                    // Update tab states
+                    tabs.forEach(t => t.classList.remove('active'));
+                    tab.classList.add('active');
+
+                    // Update view visibility
+                    views.forEach(v => {
+                        const viewId = v.id.replace('graph-', '');
+                        v.classList.toggle('active', viewId === targetId);
+                    });
+
+                    // Lazily initialize the newly visible view
+                    const targetView = document.getElementById('graph-' + targetId);
+                    if (targetView) {
+                        await initGraphView(targetView);
+                    }
+                });
+            });
+        }
+
+        initActiveGraph();
+        initGraphTabs();
+
+        // Show/hide floating TOC based on active tab
+        function updateFloatingToc() {
+            const hash = window.location.hash || '#overview';
+            const modulesToc = document.getElementById('modules-toc');
+            const progressToc = document.getElementById('progress-toc');
+
+            modulesToc.style.display = hash === '#modules' ? 'block' : 'none';
+            progressToc.style.display = hash === '#progress' ? 'block' : 'none';
+        }
+
+        window.addEventListener('hashchange', updateFloatingToc);
+        updateFloatingToc();
+
+        // Handle TOC link clicks - scroll to element without changing tab
+        document.querySelectorAll('.floating-toc-list a').forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                const targetId = link.getAttribute('href').substring(1);
+                const target = document.getElementById(targetId);
+                if (target) {
+                    target.scrollIntoView({ behavior: 'smooth' });
+                }
+            });
+        });
+    </script>
+    <script>
+        // Auto-refresh on file changes (preserves scroll position)
+        (function() {
+            const saved = sessionStorage.getItem('scrollPos');
+            if (saved) {
+                window.scrollTo(0, parseInt(saved));
+                sessionStorage.removeItem('scrollPos');
+            }
+
+            let lastLen = 0;
+            setInterval(async () => {
+                try {
+                    const res = await fetch(location.href, {cache: 'no-store'});
+                    const len = (await res.text()).length;
+                    if (lastLen && len !== lastLen) {
+                        sessionStorage.setItem('scrollPos', window.scrollY);
+                        location.reload();
+                    }
+                    lastLen = len;
+                } catch {}
+            }, 1500);
+        })();
+    </script>
+</body>
+</html>

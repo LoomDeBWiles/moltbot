@@ -1,0 +1,7 @@
+#!/bin/bash
+# Auto-render HTML dashboard when beads change
+# Runs: spec render -o output (if spec command is available)
+
+if command -v spec &> /dev/null; then
+    spec render -o output 2>/dev/null || true
+fi
