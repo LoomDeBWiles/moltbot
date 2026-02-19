@@ -13,7 +13,7 @@ export type ResolvedClaudeSessionsConfig = {
 
 export type ResolvedMemorySearchConfig = {
   enabled: boolean;
-  sources: Array<"memory" | "sessions" | "claude-sessions">;
+  sources: Array<"memory" | "sessions" | "claude-sessions" | "scribe">;
   claudeSessions: ResolvedClaudeSessionsConfig;
   provider: "openai" | "local" | "gemini" | "auto";
   remote?: {
@@ -90,19 +90,22 @@ const DEFAULT_HYBRID_VECTOR_WEIGHT = 0.7;
 const DEFAULT_HYBRID_TEXT_WEIGHT = 0.3;
 const DEFAULT_HYBRID_CANDIDATE_MULTIPLIER = 4;
 const DEFAULT_CACHE_ENABLED = true;
-const DEFAULT_SOURCES: Array<"memory" | "sessions" | "claude-sessions"> = ["memory"];
+type SourceName = ResolvedMemorySearchConfig["sources"][number];
+
+const DEFAULT_SOURCES: SourceName[] = ["memory"];
 const DEFAULT_CLAUDE_SESSIONS_PATH = "~/.claude/projects";
 
 function normalizeSources(
-  sources: Array<"memory" | "sessions" | "claude-sessions"> | undefined,
+  sources: SourceName[] | undefined,
   sessionMemoryEnabled: boolean,
-): Array<"memory" | "sessions" | "claude-sessions"> {
-  const normalized = new Set<"memory" | "sessions" | "claude-sessions">();
+): SourceName[] {
+  const normalized = new Set<SourceName>();
   const input = sources?.length ? sources : DEFAULT_SOURCES;
   for (const source of input) {
     if (source === "memory") normalized.add("memory");
     if (source === "sessions" && sessionMemoryEnabled) normalized.add("sessions");
     if (source === "claude-sessions") normalized.add("claude-sessions");
+    if (source === "scribe") normalized.add("scribe");
   }
   if (normalized.size === 0) normalized.add("memory");
   return Array.from(normalized);
@@ -138,7 +141,7 @@ function mergeConfig(
   const includeRemote =
     hasRemoteConfig || provider === "openai" || provider === "gemini" || provider === "auto";
   const batch = {
-    enabled: overrideRemote?.batch?.enabled ?? defaultRemote?.batch?.enabled ?? true,
+    enabled: overrideRemote?.batch?.enabled ?? defaultRemote?.batch?.enabled ?? false,
     wait: overrideRemote?.batch?.wait ?? defaultRemote?.batch?.wait ?? true,
     concurrency: Math.max(
       1,

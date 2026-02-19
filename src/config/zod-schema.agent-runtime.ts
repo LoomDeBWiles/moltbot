@@ -304,7 +304,14 @@ export const MemorySearchSchema = z
   .object({
     enabled: z.boolean().optional(),
     sources: z
-      .array(z.union([z.literal("memory"), z.literal("sessions"), z.literal("claude-sessions")]))
+      .array(
+        z.union([
+          z.literal("memory"),
+          z.literal("sessions"),
+          z.literal("claude-sessions"),
+          z.literal("scribe"),
+        ]),
+      )
       .optional(),
     claudeSessions: z
       .object({

@@ -232,7 +232,7 @@ export type MemorySearchConfig = {
   /** Enable vector memory search (default: true). */
   enabled?: boolean;
   /** Sources to index and search (default: ["memory"]). */
-  sources?: Array<"memory" | "sessions" | "claude-sessions">;
+  sources?: Array<"memory" | "sessions" | "claude-sessions" | "scribe">;
   /** Claude Code session indexing configuration. */
   claudeSessions?: ClaudeSessionsConfig;
   /** Experimental memory search settings. */
