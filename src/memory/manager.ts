@@ -48,6 +48,8 @@ import { loadSqliteVecExtension } from "./sqlite-vec.js";
 import type { ClaudeSessionEntry } from "./claude-session-files.js";
 import { loadMoltbotClaudeSessionIds } from "./claude-session-files.js";
 import { syncClaudeSessionFiles } from "./sync-claude-sessions.js";
+import type { ScribeFileEntry } from "./sync-scribe-files.js";
+import { syncScribeFiles } from "./sync-scribe-files.js";
 
 type MemorySource = "memory" | "sessions" | "claude-sessions" | "scribe";
 
@@ -1069,6 +1071,18 @@ export class MemoryIndexManager {
     return this.claudeSessionsDirty;
   }
 
+  private shouldSyncScribe(
+    params?: { reason?: string; force?: boolean },
+    needsFullReindex = false,
+  ) {
+    if (!this.sources.has("scribe")) return false;
+    if (params?.force) return true;
+    const reason = params?.reason;
+    if (reason === "session-start" || reason === "watch") return false;
+    if (needsFullReindex) return true;
+    return true;
+  }
+
   private async syncMemoryFiles(params: {
     needsFullReindex: boolean;
     progress?: MemorySyncProgressState;
@@ -1278,6 +1292,39 @@ export class MemoryIndexManager {
     });
   }
 
+  private async doSyncScribeFiles(params: {
+    needsFullReindex: boolean;
+    progress?: MemorySyncProgressState;
+  }) {
+    await syncScribeFiles({
+      db: this.db,
+      needsFullReindex: params.needsFullReindex,
+      progress: params.progress,
+      batchEnabled: this.batch.enabled,
+      concurrency: this.getIndexConcurrency(),
+      runWithConcurrency: (tasks, concurrency) => this.runWithConcurrency(tasks, concurrency),
+      indexFile: async (entry: ScribeFileEntry) => {
+        const adaptedEntry = {
+          path: entry.path,
+          absPath: entry.path,
+          mtimeMs: Date.now(),
+          size: entry.content.length,
+          hash: entry.hash,
+        };
+        await this.indexFile(adaptedEntry, {
+          source: "scribe",
+          content: entry.content,
+          project: entry.project,
+        });
+      },
+      vectorTable: VECTOR_TABLE,
+      ftsTable: FTS_TABLE,
+      ftsEnabled: this.fts.enabled,
+      ftsAvailable: this.fts.available,
+      model: this.provider.model,
+    });
+  }
+
   private createSyncProgress(
     onProgress: (update: MemorySyncProgressUpdate) => void,
   ): MemorySyncProgressState {
@@ -1346,6 +1393,7 @@ export class MemoryIndexManager {
         this.sources.has("memory") && (params?.force || needsFullSync || this.dirty);
       const shouldSyncSessions = this.shouldSyncSessions(params, needsFullSync);
       const shouldSyncClaudeSessions = this.shouldSyncClaudeSessions(params, needsFullSync);
+      const shouldSyncScribeFiles = this.shouldSyncScribe(params, needsFullSync);
 
       if (shouldSyncMemory) {
         await this.syncMemoryFiles({
@@ -1379,6 +1427,17 @@ export class MemoryIndexManager {
           log.warn(
             `claude-sessions sync failed: ${err instanceof Error ? err.message : String(err)}`,
           );
+        }
+      }
+
+      if (shouldSyncScribeFiles) {
+        try {
+          await this.doSyncScribeFiles({
+            needsFullReindex: needsFullSync,
+            progress: progress ?? undefined,
+          });
+        } catch (err) {
+          log.warn(`scribe sync failed: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
 
@@ -1526,6 +1585,10 @@ export class MemoryIndexManager {
         { reason: params.reason, force: params.force },
         true,
       );
+      const shouldSyncScribeFiles = this.shouldSyncScribe(
+        { reason: params.reason, force: params.force },
+        true,
+      );
 
       if (shouldSyncMemory) {
         await this.syncMemoryFiles({ needsFullReindex: true, progress: params.progress });
@@ -1550,6 +1613,14 @@ export class MemoryIndexManager {
           log.warn(
             `claude-sessions sync failed: ${err instanceof Error ? err.message : String(err)}`,
           );
+        }
+      }
+
+      if (shouldSyncScribeFiles) {
+        try {
+          await this.doSyncScribeFiles({ needsFullReindex: true, progress: params.progress });
+        } catch (err) {
+          log.warn(`scribe sync failed: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
 
