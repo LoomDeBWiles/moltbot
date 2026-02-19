@@ -29,7 +29,7 @@ type MemoryCommandOptions = {
 
 type MemoryManager = NonNullable<MemorySearchManagerResult["manager"]>;
 
-type MemorySourceName = "memory" | "sessions" | "claude-sessions";
+type MemorySourceName = "memory" | "sessions" | "claude-sessions" | "scribe";
 
 type SourceScan = {
   source: MemorySourceName;

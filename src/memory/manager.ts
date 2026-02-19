@@ -49,7 +49,7 @@ import type { ClaudeSessionEntry } from "./claude-session-files.js";
 import { loadMoltbotClaudeSessionIds } from "./claude-session-files.js";
 import { syncClaudeSessionFiles } from "./sync-claude-sessions.js";
 
-type MemorySource = "memory" | "sessions" | "claude-sessions";
+type MemorySource = "memory" | "sessions" | "claude-sessions" | "scribe";
 
 export type MemorySearchResult = {
   path: string;
