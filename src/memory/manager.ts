@@ -272,6 +272,7 @@ export class MemoryIndexManager {
       minScore?: number;
       sessionKey?: string;
       project?: string;
+      source?: MemorySource;
     },
   ): Promise<MemorySearchResult[]> {
     void this.warmSession(opts?.sessionKey);
@@ -285,6 +286,7 @@ export class MemoryIndexManager {
     const minScore = opts?.minScore ?? this.settings.query.minScore;
     const maxResults = opts?.maxResults ?? this.settings.query.maxResults;
     const project = opts?.project;
+    const source = opts?.source;
     const hybrid = this.settings.query.hybrid;
     const candidates = Math.min(
       200,
@@ -292,13 +294,13 @@ export class MemoryIndexManager {
     );
 
     const keywordResults = hybrid.enabled
-      ? await this.searchKeyword(cleaned, candidates, project).catch(() => [])
+      ? await this.searchKeyword(cleaned, candidates, project, source).catch(() => [])
       : [];
 
     const queryVec = await this.embedQueryWithTimeout(cleaned);
     const hasVector = queryVec.some((v) => v !== 0);
     const vectorResults = hasVector
-      ? await this.searchVector(queryVec, candidates, project).catch(() => [])
+      ? await this.searchVector(queryVec, candidates, project, source).catch(() => [])
       : [];
 
     if (!hybrid.enabled) {
@@ -319,6 +321,7 @@ export class MemoryIndexManager {
     queryVec: number[],
     limit: number,
     project?: string,
+    source?: MemorySource,
   ): Promise<Array<MemorySearchResult & { id: string }>> {
     const results = await searchVector({
       db: this.db,
@@ -328,8 +331,12 @@ export class MemoryIndexManager {
       limit,
       snippetMaxChars: SNIPPET_MAX_CHARS,
       ensureVectorReady: async (dimensions) => await this.ensureVectorReady(dimensions),
-      sourceFilterVec: this.buildSourceFilter("c"),
-      sourceFilterChunks: this.buildSourceFilter(),
+      sourceFilterVec: source
+        ? this.buildSingleSourceFilter("c", source)
+        : this.buildSourceFilter("c"),
+      sourceFilterChunks: source
+        ? this.buildSingleSourceFilter(undefined, source)
+        : this.buildSourceFilter(),
       project,
     });
     return results.map((entry) => entry as MemorySearchResult & { id: string });
@@ -343,9 +350,12 @@ export class MemoryIndexManager {
     query: string,
     limit: number,
     project?: string,
+    source?: MemorySource,
   ): Promise<Array<MemorySearchResult & { id: string; textScore: number }>> {
     if (!this.fts.enabled || !this.fts.available) return [];
-    const sourceFilter = this.buildSourceFilter();
+    const sourceFilter = source
+      ? this.buildSingleSourceFilter(undefined, source)
+      : this.buildSourceFilter();
     const results = await searchKeyword({
       db: this.db,
       ftsTable: FTS_TABLE,
@@ -682,6 +692,14 @@ export class MemoryIndexManager {
     const column = alias ? `${alias}.source` : "source";
     const placeholders = sources.map(() => "?").join(", ");
     return { sql: ` AND ${column} IN (${placeholders})`, params: sources };
+  }
+
+  private buildSingleSourceFilter(
+    alias: string | undefined,
+    source: MemorySource,
+  ): { sql: string; params: MemorySource[] } {
+    const column = alias ? `${alias}.source` : "source";
+    return { sql: ` AND ${column} = ?`, params: [source] };
   }
 
   private openDatabase(): DatabaseSync {

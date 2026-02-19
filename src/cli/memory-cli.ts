@@ -556,6 +556,8 @@ export function registerMemoryCli(program: Command) {
       }
     });
 
+  const validSources: MemorySourceName[] = ["memory", "sessions", "claude-sessions", "scribe"];
+
   memory
     .command("search")
     .description("Search memory files")
@@ -564,6 +566,7 @@ export function registerMemoryCli(program: Command) {
     .option("--max-results <n>", "Max results", (value: string) => Number(value))
     .option("--min-score <n>", "Minimum score", (value: string) => Number(value))
     .option("--project <slug>", "Filter results to a specific project")
+    .option("--source <name>", "Filter results to a specific source type")
     .option("--json", "Print JSON")
     .action(
       async (
@@ -572,8 +575,16 @@ export function registerMemoryCli(program: Command) {
           maxResults?: number;
           minScore?: number;
           project?: string;
+          source?: string;
         },
       ) => {
+        if (opts.source && !validSources.includes(opts.source as MemorySourceName)) {
+          defaultRuntime.error(
+            `Invalid source "${opts.source}". Valid sources: ${validSources.join(", ")}`,
+          );
+          process.exitCode = 1;
+          return;
+        }
         const cfg = loadConfig();
         const agentId = resolveAgent(cfg, opts.agent);
         await withManager<MemoryManager>({
@@ -589,6 +600,7 @@ export function registerMemoryCli(program: Command) {
                 maxResults: opts.maxResults,
                 minScore: opts.minScore,
                 project: opts.project,
+                source: opts.source as MemorySourceName | undefined,
               });
             } catch (err) {
               const message = formatErrorMessage(err);
