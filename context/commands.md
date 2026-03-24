@@ -6,8 +6,20 @@
 |------|---------|
 | Dev server | `pnpm dev` |
 | Build | `pnpm build` |
-| Test | `pnpm test` |
-| Lint | `pnpm lint` |
+| Test (unit) | `pnpm test` |
+| Test (coverage) | `pnpm test:coverage` |
+| Test (e2e) | `pnpm test:e2e` |
+| Test (live) | `CLAWDBOT_LIVE_TEST=1 pnpm test:live` |
+| Test (extensions) | `pnpm test:extensions` |
+| Test (gateway) | `pnpm test:gateway` |
+| Test (UI) | `pnpm test:ui` |
+| Test (docker) | `pnpm test:docker:all` |
+| Lint | `pnpm lint` (oxlint) |
+| Format | `pnpm format:fix` (oxfmt) |
+| UI build | `pnpm ui:build` |
+| Plugins sync | `pnpm plugins:sync` |
+| Protocol gen | `pnpm protocol:gen` |
+| Commit | `scripts/committer "<msg>" <file...>` |
 
 ## Code Search
 
