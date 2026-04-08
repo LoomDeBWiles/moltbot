@@ -13,7 +13,6 @@ import type { EmbeddedContextFile } from "../pi-embedded-helpers.js";
 import { buildSystemPromptParams } from "../system-prompt-params.js";
 import { resolveDefaultModelForAgent } from "../model-selection.js";
 import { buildAgentSystemPrompt } from "../system-prompt.js";
-import { buildTtsSystemPromptHint } from "../../tts/tts.js";
 
 /** Neutralize Anthropic streaming classifier trigger phrases.
  *  These exact strings cause CLI requests to be classified as third-party
@@ -208,7 +207,15 @@ export function buildSystemPrompt(params: {
       defaultModel: defaultModelLabel,
     },
   });
-  const ttsHint = params.config ? buildTtsSystemPromptHint(params.config) : undefined;
+  const ttsHint = params.config
+    ? [
+        "Voice (TTS) is enabled.",
+        'To reply with a voice bubble, run: node /home/ben/projects/moltbot/scripts/tts-cli.mjs "your spoken text"',
+        "Include the command output ([[audio_as_voice]] and MEDIA: lines) in your response exactly.",
+        "Only use TTS when the user asks for a voice reply.",
+        "Keep spoken text <= 1500 chars.",
+      ].join("\n")
+    : undefined;
   return sanitizeCliPrompt(
     buildAgentSystemPrompt({
       workspaceDir: params.workspaceDir,
