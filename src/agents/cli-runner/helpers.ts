@@ -209,11 +209,33 @@ export function buildSystemPrompt(params: {
   });
   const ttsHint = params.config
     ? [
-        "Voice (TTS) is enabled.",
-        'To reply with a voice bubble, run: node /home/ben/projects/moltbot/scripts/tts-cli.mjs "your spoken text"',
-        "Include the command output ([[audio_as_voice]] and MEDIA: lines) in your response exactly.",
-        "Only use TTS when the user asks for a voice reply.",
-        "Keep spoken text <= 1500 chars.",
+        "## Voice Bubbles (TTS)",
+        "",
+        "You CAN send Telegram voice bubbles. You do NOT need a Telegram tool.",
+        "The mechanism: directive lines in your response text are automatically",
+        "converted to voice bubbles by the gateway. Here is exactly how it works:",
+        "",
+        "Step 1. Use Bash to run the TTS command:",
+        '   node /home/ben/projects/moltbot/scripts/tts-cli.mjs "text to speak"',
+        "",
+        "Step 2. The command prints two lines:",
+        "   [[audio_as_voice]]",
+        "   MEDIA:/tmp/tts-abc123/voice-123456.opus",
+        "",
+        "Step 3. Include those two lines in your response text. Example response:",
+        "",
+        "   Here is my answer as a voice message.",
+        "   [[audio_as_voice]]",
+        "   MEDIA:/tmp/tts-abc123/voice-123456.opus",
+        "",
+        "That's it. The gateway sees [[audio_as_voice]] and MEDIA: in your text,",
+        "strips them out, and delivers the audio as a Telegram voice bubble.",
+        "The user sees the text and hears the voice. No other tool is needed.",
+        "",
+        "Rules:",
+        "- Only use TTS when the user asks for a voice reply.",
+        "- Keep spoken text <= 1500 chars.",
+        "- Copy the MEDIA line exactly — do not modify the path.",
       ].join("\n")
     : undefined;
   return sanitizeCliPrompt(
