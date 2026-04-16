@@ -5,6 +5,7 @@
 | `commands.md` | `pnpm dev/build/test/lint`, `m chunks` semantic search (2160 TS + 298 docs), `clawdbot memory search` with Gemini embeddings | Before running builds, tests, or querying memory |
 | `gotchas.md` | `memory index` not `sync`, Node 22+ required, Gemini asyncBatch broken (use sync), spec verify Python-only, gateway auth tokens must match, pairing CLI lazy-loads channels, batch-gemini state nesting | Before touching memory indexing, gateway config, or CLI commands |
 | `patterns.md` | Plugin SDK conventions, commit via `scripts/committer`, JSON5 config with Zod, session keys `channel:peer`, extension deps in own package.json | Before adding plugins, commands, or config changes |
+| `entities/cli-runner.md` | `claude -p` backend: system prompt assembly (delivered every turn since w14 fix), TTS directive flow (bash script + `[[audio_as_voice]]`), workspace-markdown-override pattern, cliSessionId lifecycle | Before touching CLI runner, TTS delivery, system prompt content, or session management |
 
 ## Project Structure
 

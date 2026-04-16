@@ -18,3 +18,5 @@
 - Patched dependencies (`pnpm.patchedDependencies`): must use exact versions (no `^`/`~`).
 - macOS gateway: runs only as the menubar app, no separate LaunchAgent. Restart via app or `scripts/restart-mac.sh`.
 - `canvas-host/a2ui/.bundle.hash`: auto-generated, only regenerate via `pnpm canvas:a2ui:bundle`.
+- ~~`cli-runner/helpers.ts:466`~~ **FIXED (w14, `0cfcf42`):** `!params.useResume &&` guard removed. System prompt now delivered on every turn. `systemPromptWhen: "always"` works as intended.
+- `~/clawd/` workspace markdown overrides code: agents trust bootstrap files (MEMORY.md, USER.md, TOOLS.md) and context files (entities/, gotchas.md) over code-generated system prompt hints. One contradicting file is enough to collapse agent confidence. When changing CLI-mode behavior, audit ALL bootstrap files for conflicting instructions — fixing a subset is equivalent to fixing none. See `entities/cli-runner.md` for the full list from w14.
