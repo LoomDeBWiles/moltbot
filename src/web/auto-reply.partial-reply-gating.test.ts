@@ -316,7 +316,13 @@ describe("partial reply gating", () => {
       },
     });
 
-    // Not self: should be blocked
+    // Pin the provider to anthropic so the self-only gating routes through the already-mocked
+    // runEmbeddedPiAgent. The new claude-cli default is covered by the cli-runner tests.
+    const cfg = {
+      agents: { defaults: { model: "anthropic/claude-opus-4-5" } },
+    } as ClawdbotConfig;
+
+    // Not self: should be blocked (no config = no participants = only self)
     const blocked = await getReplyFromConfig(
       {
         Body: "hi",
@@ -337,7 +343,7 @@ describe("partial reply gating", () => {
         To: "whatsapp:+123",
       },
       undefined,
-      {},
+      cfg,
     );
     expect(allowed).toMatchObject({ text: "ok", audioAsVoice: false });
     expect(runEmbeddedPiAgent).toHaveBeenCalledOnce();

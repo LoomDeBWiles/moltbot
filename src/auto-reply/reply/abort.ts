@@ -1,5 +1,6 @@
 import { resolveSessionAgentId } from "../../agents/agent-scope.js";
 import { abortEmbeddedPiRun } from "../../agents/pi-embedded.js";
+import { abortCliRun } from "../../agents/cli-abort-registry.js";
 import { listSubagentRunsForRequester } from "../../agents/subagent-registry.js";
 import type { ClawdbotConfig } from "../../config/config.js";
 import {
@@ -101,7 +102,7 @@ export function stopSubagentsForRequester(params: {
     }
     const entry = store[childKey];
     const sessionId = entry?.sessionId;
-    const aborted = sessionId ? abortEmbeddedPiRun(sessionId) : false;
+    const aborted = sessionId ? abortEmbeddedPiRun(sessionId) || abortCliRun(sessionId) : false;
 
     if (aborted || cleared.followupCleared > 0 || cleared.laneCleared > 0) {
       stopped += 1;
@@ -148,7 +149,7 @@ export async function tryFastAbortFromMessage(params: {
     const store = loadSessionStore(storePath);
     const { entry, key } = resolveSessionEntryForKey(store, targetKey);
     const sessionId = entry?.sessionId;
-    const aborted = sessionId ? abortEmbeddedPiRun(sessionId) : false;
+    const aborted = sessionId ? abortEmbeddedPiRun(sessionId) || abortCliRun(sessionId) : false;
     const cleared = clearSessionQueues([key ?? targetKey, sessionId]);
     if (cleared.followupCleared > 0 || cleared.laneCleared > 0) {
       logVerbose(

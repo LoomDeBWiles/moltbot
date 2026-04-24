@@ -185,7 +185,10 @@ describe("runCronIsolatedAgentTurn", () => {
         path.join(home, ".clawdbot", "agents", "{agentId}", "sessions", "sessions.json"),
         {
           agents: {
-            defaults: { workspace: path.join(home, "default-workspace") },
+            defaults: {
+              model: "anthropic/claude-opus-4-5",
+              workspace: path.join(home, "default-workspace"),
+            },
             list: [
               { id: "main", default: true },
               { id: "ops", workspace: opsWorkspace },

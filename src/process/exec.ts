@@ -51,6 +51,7 @@ export type CommandOptions = {
   input?: string;
   env?: NodeJS.ProcessEnv;
   windowsVerbatimArguments?: boolean;
+  signal?: AbortSignal;
 };
 
 export async function runCommandWithTimeout(
@@ -59,7 +60,7 @@ export async function runCommandWithTimeout(
 ): Promise<SpawnResult> {
   const options: CommandOptions =
     typeof optionsOrTimeout === "number" ? { timeoutMs: optionsOrTimeout } : optionsOrTimeout;
-  const { timeoutMs, cwd, input, env } = options;
+  const { timeoutMs, cwd, input, env, signal: abortSignal } = options;
   const { windowsVerbatimArguments } = options;
   const hasInput = input !== undefined;
 
@@ -97,6 +98,21 @@ export async function runCommandWithTimeout(
       }
     }, timeoutMs);
 
+    const onAbort = () => {
+      if (settled) return;
+      if (typeof child.kill === "function") {
+        child.kill("SIGTERM");
+        // 2s grace, then SIGKILL in case the child ignores SIGTERM.
+        setTimeout(() => {
+          if (!settled && typeof child.kill === "function") child.kill("SIGKILL");
+        }, 2000).unref();
+      }
+    };
+    if (abortSignal) {
+      if (abortSignal.aborted) onAbort();
+      else abortSignal.addEventListener("abort", onAbort, { once: true });
+    }
+
     if (hasInput && child.stdin) {
       child.stdin.write(input ?? "");
       child.stdin.end();
@@ -112,12 +128,14 @@ export async function runCommandWithTimeout(
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      abortSignal?.removeEventListener("abort", onAbort);
       reject(err);
     });
     child.on("close", (code, signal) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      abortSignal?.removeEventListener("abort", onAbort);
       resolve({ stdout, stderr, code, signal, killed: child.killed });
     });
   });

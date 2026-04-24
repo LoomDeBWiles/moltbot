@@ -11,6 +11,7 @@ import { resolveClawdbotDocsPath } from "./docs-path.js";
 import { resolveSessionAgentIds } from "./agent-scope.js";
 import { makeBootstrapWarn, resolveBootstrapContextForRun } from "./bootstrap-files.js";
 import { resolveCliBackendConfig } from "./cli-backends.js";
+import { registerCliRun, unregisterCliRun } from "./cli-abort-registry.js";
 import {
   appendImagePathsToPrompt,
   buildCliArgs,
@@ -157,6 +158,10 @@ export async function runCliAgent(params: {
   const serialize = backend.serialize ?? true;
   const queueKey = serialize ? backendResolved.id : `${backendResolved.id}:${params.runId}`;
 
+  const cliAbortEnabled = process.env.CLAWDBOT_CLAUDE_CLI_ABORT !== "0";
+  const controller = new AbortController();
+  if (cliAbortEnabled) registerCliRun(params.sessionId, controller);
+
   try {
     const output = await enqueueCliRun(queueKey, async () => {
       log.info(
@@ -218,6 +223,7 @@ export async function runCliAgent(params: {
         cwd: workspaceDir,
         env,
         input: stdinPayload,
+        signal: controller.signal,
       });
 
       const stdout = result.stdout.trim();
@@ -287,6 +293,7 @@ export async function runCliAgent(params: {
     }
     throw err;
   } finally {
+    if (cliAbortEnabled) unregisterCliRun(params.sessionId, controller);
     if (cleanupImages) {
       await cleanupImages();
     }
