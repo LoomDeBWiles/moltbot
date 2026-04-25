@@ -83,6 +83,14 @@ export function isTransientNetworkError(err: unknown): boolean {
   return false;
 }
 
+function isOperationalFailoverError(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const name = "name" in err ? String(err.name) : "";
+  if (name !== "FailoverError") return false;
+  const reason = "reason" in err ? String(err.reason) : "";
+  return Boolean(reason);
+}
+
 export function registerUnhandledRejectionHandler(handler: UnhandledRejectionHandler): () => void {
   handlers.add(handler);
   return () => {
@@ -119,6 +127,11 @@ export function installUnhandledRejectionHandler(): void {
     // These are temporary connectivity issues that will resolve on their own
     if (isTransientNetworkError(reason)) {
       console.error("[clawdbot] Network error (non-fatal):", formatUncaughtError(reason));
+      return;
+    }
+
+    if (isOperationalFailoverError(reason)) {
+      console.error("[clawdbot] Model failure (non-fatal):", formatUncaughtError(reason));
       return;
     }
 

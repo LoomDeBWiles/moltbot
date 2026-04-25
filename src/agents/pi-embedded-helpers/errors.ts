@@ -371,6 +371,8 @@ const ERROR_PATTERNS = {
     "insufficient credits",
     "credit balance",
     "plans & billing",
+    "extra usage",
+    "out of extra",
   ],
   auth: [
     /invalid[_ ]?api[_ ]?key/,
@@ -478,10 +480,10 @@ export function isAuthAssistantError(msg: AssistantMessage | undefined): boolean
 
 export function classifyFailoverReason(raw: string): FailoverReason | null {
   if (isImageDimensionErrorMessage(raw)) return null;
+  if (isBillingErrorMessage(raw)) return "billing";
   if (isRateLimitErrorMessage(raw)) return "rate_limit";
   if (isOverloadedErrorMessage(raw)) return "rate_limit";
   if (isCloudCodeAssistFormatError(raw)) return "format";
-  if (isBillingErrorMessage(raw)) return "billing";
   if (isTimeoutErrorMessage(raw)) return "timeout";
   if (isAuthErrorMessage(raw)) return "auth";
   return null;

@@ -37,4 +37,14 @@ describe("classifyFailoverReason", () => {
       "rate_limit",
     );
   });
+
+  it("classifies Claude extra usage exhaustion as billing", () => {
+    expect(
+      classifyFailoverReason(
+        'API Error: 400 {"type":"error","error":{"type":"invalid_request_error","message":"You\'re out of extra usage. Add more at claude.ai/settings/usage and keep going."}}',
+      ),
+    ).toBe("billing");
+    expect(classifyFailoverReason("extra usage limit reached")).toBe("billing");
+    expect(classifyFailoverReason("you are out of extra credits")).toBe("billing");
+  });
 });

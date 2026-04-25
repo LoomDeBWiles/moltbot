@@ -48,7 +48,14 @@ const DEFAULT_CLAUDE_BACKEND: CliBackendConfig = {
   systemPromptArg: "--append-system-prompt",
   systemPromptMode: "append",
   systemPromptWhen: "always",
-  clearEnv: ["ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY_OLD"],
+  clearEnv: [
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_API_KEY_OLD",
+    "ANTHROPIC_AUTH_TOKEN",
+    "CLAUDE_CODE_USE_BEDROCK",
+    "CLAUDE_CODE_USE_VERTEX",
+    "CLAUDE_CODE_USE_FOUNDRY",
+  ],
   serialize: true,
 };
 

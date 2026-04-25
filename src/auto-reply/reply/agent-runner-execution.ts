@@ -3,10 +3,12 @@ import fs from "node:fs";
 import { resolveAgentModelFallbacksOverride } from "../../agents/agent-scope.js";
 import { runCliAgent } from "../../agents/cli-runner.js";
 import { getCliSessionId } from "../../agents/cli-session.js";
+import { isFailoverError } from "../../agents/failover-error.js";
 import { runWithModelFallback } from "../../agents/model-fallback.js";
 import { isCliProvider } from "../../agents/model-selection.js";
 import { runEmbeddedPiAgent } from "../../agents/pi-embedded.js";
 import {
+  isBillingErrorMessage,
   isCompactionFailureError,
   isContextOverflowError,
   isLikelyContextOverflowError,
@@ -37,6 +39,26 @@ import type { FollowupRun } from "./queue.js";
 import { parseReplyDirectives } from "./reply-directives.js";
 import { applyReplyTagsToPayload, isRenderablePayload } from "./reply-payloads.js";
 import type { TypingSignaler } from "./typing-mode.js";
+
+const OAUTH_ONLY_QUOTA_STOP_TEXT =
+  "⚠️ Claude plan quota is exhausted. OAuth-only mode is configured, so I did not use API credits, extra usage, or a non-Claude fallback. Wait for the Claude usage window to reset, then try again.";
+
+function isOAuthOnlyQuotaStop(err: unknown, message: string): boolean {
+  if (isFailoverError(err)) {
+    return (
+      err.provider === "claude-cli" && (err.reason === "billing" || err.reason === "rate_limit")
+    );
+  }
+  const lower = message.toLowerCase();
+  return (
+    isBillingErrorMessage(message) ||
+    (lower.includes("claude") &&
+      (lower.includes("usage limit") ||
+        lower.includes("session limit") ||
+        lower.includes("weekly limit") ||
+        lower.includes("reset")))
+  );
+}
 
 export type AgentRunLoopResult =
   | {
@@ -533,9 +555,11 @@ export async function runAgentTurnWithFallback(params: {
       const trimmedMessage = message.replace(/\.\s*$/, "");
       const fallbackText = isContextOverflow
         ? "⚠️ Context overflow — prompt too large for this model. Try a shorter message or a larger-context model."
-        : isRoleOrderingError
-          ? "⚠️ Message ordering conflict - please try again. If this persists, use /new to start a fresh session."
-          : `⚠️ Agent failed before reply: ${trimmedMessage}.\nLogs: clawdbot logs --follow`;
+        : isOAuthOnlyQuotaStop(err, message)
+          ? OAUTH_ONLY_QUOTA_STOP_TEXT
+          : isRoleOrderingError
+            ? "⚠️ Message ordering conflict - please try again. If this persists, use /new to start a fresh session."
+            : `⚠️ Agent failed before reply: ${trimmedMessage}.\nLogs: clawdbot logs --follow`;
 
       return {
         kind: "final",

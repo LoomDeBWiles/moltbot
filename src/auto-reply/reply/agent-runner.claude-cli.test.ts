@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
+import { FailoverError } from "../../agents/failover-error.js";
 import { onAgentEvent } from "../../infra/agent-events.js";
 import type { TemplateContext } from "../templating.js";
 import type { FollowupRun, QueueSettings } from "./queue.js";
@@ -129,5 +130,21 @@ describe("runReplyAgent claude-cli routing", () => {
     expect(runEmbeddedPiAgentMock).not.toHaveBeenCalled();
     expect(lifecyclePhases).toEqual(["start", "end"]);
     expect(result).toMatchObject({ text: "ok" });
+  });
+
+  it("returns an OAuth-only quota message for claude-cli billing failures", async () => {
+    runCliAgentMock.mockRejectedValueOnce(
+      new FailoverError("You're out of extra usage.", {
+        reason: "billing",
+        provider: "claude-cli",
+        model: "opus-4.5",
+        status: 402,
+      }),
+    );
+
+    const result = await createRun();
+
+    expect(result.text).toContain("Claude plan quota is exhausted");
+    expect(result.text).toContain("I did not use API credits");
   });
 });
